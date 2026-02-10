@@ -55,11 +55,13 @@ const fragSky = /* glsl */ `
     // Mie glow
     sky += vec3(1.0,0.92,0.75)*hgPhase(cosT,0.76)*0.012;
 
-    // Sun disc
+    // Sun disc — bright core + multi-layer glow (rendered before clouds → naturally occluded)
     float sd = max(dot(dir, sun), 0.0);
-    sky += vec3(1.0,0.97,0.9)*pow(sd,512.0)*4.0;
-    sky += vec3(1.0,0.85,0.6)*pow(sd,32.0)*0.35;
-    sky += vec3(1.0,0.7,0.4)*pow(sd,6.0)*0.15;
+    sky += vec3(1.0,0.98,0.92)*pow(sd,2048.0)*12.0;  // tight blazing core
+    sky += vec3(1.0,0.97,0.88)*pow(sd,512.0)*5.0;    // bright inner disc
+    sky += vec3(1.0,0.90,0.70)*pow(sd,128.0)*1.2;    // warm bloom ring
+    sky += vec3(1.0,0.82,0.55)*pow(sd,32.0)*0.45;    // broad corona
+    sky += vec3(1.0,0.70,0.40)*pow(sd,6.0)*0.18;     // atmospheric glow
 
     // Ground
     if (dir.y < 0.0) {
@@ -105,62 +107,10 @@ export function createAtmosphere(sunDir) {
   const mesh = new THREE.Mesh(geo, mat);
   mesh.renderOrder = -1;
 
-  // ── Sun sphere — visible emissive orb positioned along sun direction ──
-  const sunDist = 6000; // distance from origin
-  const sunGeo = new THREE.SphereGeometry(120, 32, 32);
-  const sunMat = new THREE.MeshBasicMaterial({
-    color: 0xfffaea,
-    fog: false,
-  });
-  const sunMesh = new THREE.Mesh(sunGeo, sunMat);
-  sunMesh.position.copy(dir).multiplyScalar(sunDist);
-  sunMesh.renderOrder = -0.5;
+  // Sun disc is now rendered entirely in the sky dome shader (naturally behind clouds)
+  // No separate 3D meshes needed — shader handles core, bloom, corona, and glow
 
-  // Sun glow — larger transparent sphere around the sun
-  const glowGeo = new THREE.SphereGeometry(300, 32, 32);
-  const glowMat = new THREE.ShaderMaterial({
-    uniforms: {
-      uColor: { value: new THREE.Color(1.0, 0.95, 0.8) },
-    },
-    vertexShader: /* glsl */ `
-      varying vec3 vNorm;
-      varying vec3 vWorldPos;
-      void main() {
-        vNorm = normalize(normalMatrix * normal);
-        vec4 wp = modelMatrix * vec4(position, 1.0);
-        vWorldPos = wp.xyz;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      uniform vec3 uColor;
-      varying vec3 vNorm;
-      varying vec3 vWorldPos;
-      void main() {
-        vec3 V = normalize(cameraPosition - vWorldPos);
-        float rim = 1.0 - max(dot(V, normalize(vNorm)), 0.0);
-        float glow = pow(rim, 2.0) * 0.6;
-        float core = pow(1.0 - rim, 8.0) * 0.4;
-        float alpha = clamp(glow + core, 0.0, 0.7);
-        gl_FragColor = vec4(uColor, alpha);
-      }
-    `,
-    transparent: true,
-    side: THREE.BackSide,
-    depthWrite: false,
-    fog: false,
-  });
-  const glowMesh = new THREE.Mesh(glowGeo, glowMat);
-  glowMesh.position.copy(sunMesh.position);
-  glowMesh.renderOrder = -0.6;
-
-  // Group everything
-  const group = new THREE.Group();
-  group.add(mesh);
-  group.add(sunMesh);
-  group.add(glowMesh);
-
-  return { mesh: group, material: mat, sunMesh, glowMesh };
+  return { mesh, material: mat };
 }
 
 export function updateAtmosphere(atmo, time) {

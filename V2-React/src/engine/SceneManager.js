@@ -94,7 +94,7 @@ export class SceneManager {
 
     // Camera
     this.camera = new THREE.PerspectiveCamera(
-      55, container.clientWidth / container.clientHeight, 1, 25000,
+      55, container.clientWidth / container.clientHeight, 0.1, 25000,
     );
     this.camera.position.set(-400, 350, 700);
 
@@ -103,7 +103,7 @@ export class SceneManager {
     this.controls.enableDamping    = true;
     this.controls.dampingFactor    = 0.12;
     this.controls.maxDistance      = 4000;
-    this.controls.minDistance      = 2;           // allow very close-up views
+    this.controls.minDistance      = 0.5;         // allow very close-up views
     this.controls.maxPolarAngle    = Math.PI * 0.49;  // ~88°
     this.controls.minPolarAngle    = 0.05;             // ~3°
     this.controls.enablePan        = true;
@@ -233,7 +233,7 @@ export class SceneManager {
     this.sunLight.castShadow = true;
     const s = this.sunLight.shadow;
     s.mapSize.set(4096, 4096);
-    s.camera.near   =    1;
+    s.camera.near   =  0.5;
     s.camera.far    = 4000;
     s.camera.left   = -1400;
     s.camera.right  =  1400;
@@ -539,7 +539,7 @@ export class SceneManager {
       const cx = Math.max(-halfSize + 1, Math.min(halfSize - 1, cam.x));
       const cz = Math.max(-halfSize + 1, Math.min(halfSize - 1, cam.z));
       const terrainH = getTerrainHeight(this.heightMap, cx, cz);
-      const minY = terrainH + 1.5;          // allow very close to ground
+      const minY = terrainH + 0.3;          // allow very close to ground
       if (cam.y < minY) {
         cam.y = minY;
       }
@@ -1224,13 +1224,7 @@ export class SceneManager {
     }
     // Atmosphere sky dome
     if (this.atmosphere?.material) this.atmosphere.material.uniforms.uSunDir.value.copy(dir);
-    // Sun sphere + glow follow direction
-    if (this.atmosphere?.sunMesh) {
-      this.atmosphere.sunMesh.position.copy(dir).multiplyScalar(6000);
-    }
-    if (this.atmosphere?.glowMesh) {
-      this.atmosphere.glowMesh.position.copy(dir).multiplyScalar(6000);
-    }
+    // Sun disc is now shader-based inside the sky dome — no separate meshes to update
   }
 
   updateExposure(val) {
