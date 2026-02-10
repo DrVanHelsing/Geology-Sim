@@ -16,11 +16,11 @@ const HALF = TERRAIN_SIZE / 2; // 1000
  * Lakes are placed in valley floors / low basins.
  * rx, rz = semi-axes of the elliptical basin.              */
 export const LAKES = [
-  { cx: -320, cz:  180, rx: 160, rz: 110, depth: 24, name: 'Mirror Lake' },
-  { cx:  260, cz: -280, rx: 130, rz: 150, depth: 22, name: 'Crystal Pond' },
-  { cx: -140, cz: -420, rx: 100, rz:  80, depth: 18, name: 'Emerald Tarn' },
-  { cx:  550, cz:  200, rx: 140, rz: 100, depth: 20, name: 'Sapphire Lake' },
-  { cx: -560, cz: -120, rx:  90, rz: 110, depth: 56, name: 'Hidden Pool' },
+  { cx: -320, cz:  180, rx: 160, rz: 110, depth: 55, name: 'Mirror Lake' },
+  { cx:  260, cz: -280, rx: 130, rz: 150, depth: 220, name: 'Crystal Pond' },
+  { cx: -140, cz: -420, rx: 100, rz:  80, depth: 25, name: 'Emerald Tarn' },
+  { cx:  550, cz:  200, rx: 140, rz: 100, depth: 75, name: 'Sapphire Lake' },
+  { cx: -560, cz: -120, rx:  90, rz: 110, depth: 200, name: 'Hidden Pool' },
 ];
 
 /* ─── River path — control points the river follows (world coords) ─── *
@@ -130,11 +130,25 @@ export function generateHeight(noise, noiseB, x, z) {
   // ── 6. Plateau / mesa shapes ──
   const plateau = Math.max(0, fbm(noiseB, x * 0.00025, z * 0.00025, 3)) * 18;
 
-  // ── 7. Edge falloff — terrain lowers towards map edges like an island ──
+  // ── 7. Edge falloff — irregular island coastline ──
+  // Use radial distance with noise-warped boundary for natural shape
   const ex = x / HALF, ez = z / HALF;
-  const edgeDist = Math.max(Math.abs(ex), Math.abs(ez));
-  const edgeFalloff = edgeDist > 0.85 ? (edgeDist - 0.85) / 0.15 : 0;
-  const edgeDrop = edgeFalloff * edgeFalloff * 60;
+  // Base radial distance (elliptical, slightly wider E-W)
+  const rawDist = Math.sqrt(ex * ex * 0.85 + ez * ez * 1.05);
+  // Multi-octave angular noise creates bays, peninsulas, headlands
+  const ang = Math.atan2(ez, ex);
+  const coastWarp =
+      0.14 * noise(Math.cos(ang) * 2.2 + 3.0, Math.sin(ang) * 2.2 + 3.0)   // large bays
+    + 0.07 * noise(Math.cos(ang) * 5.5 + 10,  Math.sin(ang) * 5.5 + 10)    // medium inlets
+    + 0.04 * noiseB(Math.cos(ang) * 11 + 20,  Math.sin(ang) * 11 + 20);    // small coves
+  // Radial-distance noise: pulls coastline in/out based on world position too
+  const radialWarp = 0.08 * noise(x * 0.0015 + 50, z * 0.0015 + 50)
+                   + 0.05 * noiseB(x * 0.003 + 80, z * 0.003 + 80);
+  const coastThreshold = 0.78 + coastWarp + radialWarp;  // ~0.55 to ~1.0
+  const edgeFalloff = rawDist > coastThreshold
+    ? (rawDist - coastThreshold) / Math.max(0.08, 0.18 - Math.abs(coastWarp) * 0.3)
+    : 0;
+  const edgeDrop = edgeFalloff * edgeFalloff * 75;
 
   // ── Compose ──
   //   Base floor of ~80 m ensures most terrain is well above WATER_LEVEL (38)

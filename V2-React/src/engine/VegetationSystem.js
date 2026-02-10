@@ -176,23 +176,23 @@ export function createVegetation(hm, noise) {
    ============================================================= */
 function addTrees(group, getH, noise, scatter) {
   // ── Pine trees (tall conifers — layered cones) ──
-  const pineCount = 600;
-  const pineTrunkGeo = new THREE.CylinderGeometry(0.3, 0.6, 8, 8);
+  const pineCount = 900;
+  const pineTrunkGeo = new THREE.CylinderGeometry(0.3, 0.6, 8, 12);
   const pineTrunkMat = new THREE.MeshStandardMaterial({
     color: 0x3d281a, roughness: 0.95, metalness: 0,
   });
 
   // 3 layered cone crowns for pine — 12 segments for smooth silhouette
-  const pineCrown1 = new THREE.ConeGeometry(5, 7, 12);
+  const pineCrown1 = new THREE.ConeGeometry(5, 7, 16);
   pineCrown1.translate(0, 10, 0);
-  const pineCrown2 = new THREE.ConeGeometry(4, 6, 12);
+  const pineCrown2 = new THREE.ConeGeometry(4, 6, 16);
   pineCrown2.translate(0, 13, 0);
-  const pineCrown3 = new THREE.ConeGeometry(2.8, 5, 12);
+  const pineCrown3 = new THREE.ConeGeometry(2.8, 5, 16);
   pineCrown3.translate(0, 15.5, 0);
 
   const mergedPineCrown = mergeBufferGeometries([pineCrown1, pineCrown2, pineCrown3]);
   const pineCrownMat = new THREE.MeshStandardMaterial({
-    color: 0x1a4a1a, roughness: 0.85, metalness: 0,
+    color: 0x1f5e1f, roughness: 0.82, metalness: 0,
   });
 
   const pineTrunkMesh = new THREE.InstancedMesh(pineTrunkGeo, pineTrunkMat, pineCount);
@@ -237,23 +237,23 @@ function addTrees(group, getH, noise, scatter) {
   group.add(pineTrunkMesh, pineCrownMesh);
 
   // ── Oak trees (round canopy — lumpy merged spheres) ──
-  const oakCount = 450;
-  const oakTrunkGeo = new THREE.CylinderGeometry(0.5, 0.9, 5, 8);
+  const oakCount = 700;
+  const oakTrunkGeo = new THREE.CylinderGeometry(0.5, 0.9, 5, 12);
   const oakTrunkMat = new THREE.MeshStandardMaterial({
     color: 0x4a3526, roughness: 0.92,
   });
   // Lumpy sphere crown — higher segments for smooth look
-  const oakSphere1 = new THREE.SphereGeometry(5, 12, 8);
+  const oakSphere1 = new THREE.SphereGeometry(5, 16, 12);
   oakSphere1.translate(0, 9, 0);
-  const oakSphere2 = new THREE.SphereGeometry(3.5, 10, 7);
+  const oakSphere2 = new THREE.SphereGeometry(3.5, 14, 10);
   oakSphere2.translate(2.5, 10.5, 1);
-  const oakSphere3 = new THREE.SphereGeometry(3, 10, 7);
+  const oakSphere3 = new THREE.SphereGeometry(3, 14, 10);
   oakSphere3.translate(-2, 10, -1.5);
-  const oakSphere4 = new THREE.SphereGeometry(2.5, 8, 6);
+  const oakSphere4 = new THREE.SphereGeometry(2.5, 12, 8);
   oakSphere4.translate(0.5, 11.5, 2);
   const mergedOakCrown = mergeBufferGeometries([oakSphere1, oakSphere2, oakSphere3, oakSphere4]);
   const oakCrownMat = new THREE.MeshStandardMaterial({
-    color: 0x2d6b1a, roughness: 0.82,
+    color: 0x38821e, roughness: 0.78,
   });
 
   const oakTrunkMesh = new THREE.InstancedMesh(oakTrunkGeo, oakTrunkMat, oakCount);
@@ -301,16 +301,16 @@ function addTrees(group, getH, noise, scatter) {
   group.add(oakTrunkMesh, oakCrownMesh);
 
   // ── Birch trees (thin white trunk, light green leaves) ──
-  const birchCount = 250;
+  const birchCount = 400;
   const birchTrunkGeo = new THREE.CylinderGeometry(0.2, 0.35, 9, 8);
   const birchTrunkMat = new THREE.MeshStandardMaterial({
     color: 0xe8dcc8, roughness: 0.6, metalness: 0,
   });
-  const birchCrownGeo = new THREE.SphereGeometry(3.5, 10, 8);
+  const birchCrownGeo = new THREE.SphereGeometry(3.5, 14, 10);
   birchCrownGeo.translate(0, 11, 0);
   birchCrownGeo.scale(0.8, 1.2, 0.8);
   const birchCrownMat = new THREE.MeshStandardMaterial({
-    color: 0x5aab35, roughness: 0.8, transparent: true, opacity: 0.92,
+    color: 0x66bf40, roughness: 0.75, transparent: true, opacity: 0.92,
   });
 
   const birchTrunkMesh = new THREE.InstancedMesh(birchTrunkGeo, birchTrunkMat, birchCount);
@@ -360,11 +360,11 @@ function addTrees(group, getH, noise, scatter) {
    BUSHES — small shrubs for ground cover
    ============================================================= */
 function addBushes(group, getH, noise, scatter) {
-  const count = 2500;
-  const geo = new THREE.SphereGeometry(2, 10, 6);
+  const count = 3500;
+  const geo = new THREE.SphereGeometry(2, 12, 8);
   geo.scale(1, 0.65, 1);
   const mat = new THREE.MeshStandardMaterial({
-    color: 0x2e6e18, roughness: 0.9,
+    color: 0x3a8520, roughness: 0.85,
   });
   const mesh = new THREE.InstancedMesh(geo, mat, count);
   mesh.castShadow = true;
@@ -401,8 +401,8 @@ function addBushes(group, getH, noise, scatter) {
    ROCKS — natural outcrops on steep slopes
    ============================================================= */
 function addRocks(group, getH, noise, scatter) {
-  const count = 500;
-  const geo = new THREE.DodecahedronGeometry(1, 1);
+  const count = 750;
+  const geo = new THREE.DodecahedronGeometry(1, 2);
   const mat = new THREE.MeshStandardMaterial({
     color: 0x8a8380, roughness: 0.92, metalness: 0.02,
   });
@@ -965,6 +965,198 @@ function addFarmCompound(group, getH) {
   vane.position.set(wmP.x + vaneOffX, wmH + 19.5, wmP.z + vaneOffZ);
   vane.rotation.y = angle;
   group.add(vane);
+
+  /* ═══════════════════════════════════════════════════════════════
+     VEGAS-STYLE BILLBOARD — "Rudy's Farm"
+     Just outside the fence, facing inward.
+     ═══════════════════════════════════════════════════════════════ */
+  (function addBillboard() {
+    // Place billboard just outside fence radius (80) at ~92 units from farm center
+    // Position it in local space then transform to world
+    const bbLocalX = 0;       // centred on farm X-axis
+    const bbLocalZ = -92;     // slightly beyond the fence in front
+    const bbPos = local(bbLocalX, bbLocalZ);
+    const bbGH = getH(bbPos.x, bbPos.z);
+
+    // Board dimensions
+    const boardW = 22;
+    const boardH = 11;
+    const postH  = 6;     // legs below the board
+    const totalH = postH + boardH;
+
+    // ── Support posts ──
+    // Posts are offset along the board's local horizontal axis
+    const boardRight = new THREE.Vector3(Math.cos(angle), 0, -Math.sin(angle));
+    const postGeo = new THREE.BoxGeometry(0.8, totalH, 0.8);
+    const postMat = new THREE.MeshStandardMaterial({ color: 0x5a4a3a, roughness: 0.85, metalness: 0.15 });
+    for (const side of [-1, 1]) {
+      const ox = boardRight.x * boardW * 0.42 * side;
+      const oz = boardRight.z * boardW * 0.42 * side;
+      const postMesh = new THREE.Mesh(postGeo, postMat);
+      postMesh.position.set(bbPos.x + ox, bbGH + totalH / 2, bbPos.z + oz);
+      postMesh.castShadow = true;
+      group.add(postMesh);
+    }
+
+    // ── Backboard ──
+    const backGeo = new THREE.BoxGeometry(boardW, boardH, 0.6);
+    const backMat = new THREE.MeshStandardMaterial({ color: 0x1a0a2e, roughness: 0.6, metalness: 0.2 });
+    const backMesh = new THREE.Mesh(backGeo, backMat);
+    backMesh.position.set(bbPos.x, bbGH + postH + boardH / 2, bbPos.z);
+    backMesh.rotation.y = angle + Math.PI; // face inward toward farm
+    backMesh.castShadow = true;
+    backMesh.receiveShadow = true;
+    group.add(backMesh);
+
+    // ── Billboard face with text ──
+    const canvas = document.createElement('canvas');
+    canvas.width  = 1024;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+
+    // Dark gradient background
+    const grad = ctx.createLinearGradient(0, 0, 0, 512);
+    grad.addColorStop(0, '#1a0a40');
+    grad.addColorStop(0.5, '#2a1060');
+    grad.addColorStop(1, '#1a0a40');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 1024, 512);
+
+    // Decorative border
+    ctx.strokeStyle = '#ffcc00';
+    ctx.lineWidth = 12;
+    ctx.strokeRect(20, 20, 984, 472);
+    ctx.strokeStyle = '#ff4400';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(35, 35, 954, 442);
+
+    // Main text — "Rudy's Farm"
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Gold glow
+    ctx.shadowColor   = '#ffaa00';
+    ctx.shadowBlur    = 30;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+
+    ctx.font = 'bold 110px "Georgia", serif';
+    ctx.fillStyle = '#ffe040';
+    ctx.fillText("Rudy's Farm", 512, 220);
+
+    // Subtitle
+    ctx.shadowBlur = 15;
+    ctx.font = 'italic 42px "Georgia", serif';
+    ctx.fillStyle = '#ffddaa';
+    ctx.fillText('★  Est. Since Forever  ★', 512, 350);
+
+    // Reset shadow
+    ctx.shadowBlur = 0;
+
+    // Small decorative stars
+    ctx.font = '36px serif';
+    ctx.fillStyle = '#ffcc00';
+    ctx.fillText('✦', 100, 220);
+    ctx.fillText('✦', 924, 220);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.anisotropy = 4;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    // Use MeshBasicMaterial so the sign is self-lit (always fully visible)
+    const faceMat = new THREE.MeshBasicMaterial({
+      map: tex,
+      side: THREE.DoubleSide,
+      toneMapped: false,
+    });
+    const faceGeo = new THREE.PlaneGeometry(boardW - 0.4, boardH - 0.4);
+    const faceMesh = new THREE.Mesh(faceGeo, faceMat);
+    faceMesh.position.set(bbPos.x, bbGH + postH + boardH / 2, bbPos.z);
+    faceMesh.rotation.y = angle + Math.PI;
+    // Nudge forward so it sits in front of the backboard (toward viewer)
+    faceMesh.translateZ(0.35);
+    group.add(faceMesh);
+
+    // ── Chaser lights around the border ──
+    const bulbGeo = new THREE.SphereGeometry(0.35, 6, 6);
+    const bulbs = [];
+    const bulbColors = [
+      new THREE.Color(1.0, 0.85, 0.2),   // warm gold
+      new THREE.Color(1.0, 0.3, 0.1),    // red-orange
+      new THREE.Color(1.0, 0.95, 0.8),   // warm white
+      new THREE.Color(1.0, 0.5, 0.0),    // amber
+      new THREE.Color(0.9, 0.15, 0.3),   // hot pink
+    ];
+    const numBulbs = 56;
+    const perimeter = 2 * (boardW + boardH);
+    const spacing = perimeter / numBulbs;
+    const halfW = boardW / 2;
+    const halfH = boardH / 2;
+
+    for (let i = 0; i < numBulbs; i++) {
+      let d = i * spacing;
+      let lx, ly;
+      if (d < boardW) {                    // top edge
+        lx = -halfW + d;  ly = halfH;
+      } else if (d < boardW + boardH) {    // right edge
+        lx = halfW;      ly = halfH - (d - boardW);
+      } else if (d < 2*boardW + boardH) {  // bottom edge
+        lx = halfW - (d - boardW - boardH); ly = -halfH;
+      } else {                              // left edge
+        lx = -halfW;     ly = -halfH + (d - 2*boardW - boardH);
+      }
+
+      const baseColor = bulbColors[i % bulbColors.length];
+      const bMat = new THREE.MeshStandardMaterial({
+        color: baseColor,
+        emissive: baseColor,
+        emissiveIntensity: 1.5,
+        roughness: 0.2,
+        metalness: 0.3,
+      });
+      const bulb = new THREE.Mesh(bulbGeo, bMat);
+
+      // Transform local billboard coords to world
+      // lx goes along board width, ly goes along board height, board faces angle+PI
+      const fwd = new THREE.Vector3(-Math.sin(angle), 0, -Math.cos(angle)); // face normal
+      const right = new THREE.Vector3(Math.cos(angle), 0, -Math.sin(angle)); // board horizontal
+      const worldBulbPos = new THREE.Vector3(bbPos.x, bbGH + postH + boardH/2, bbPos.z)
+        .add(right.clone().multiplyScalar(lx))
+        .add(new THREE.Vector3(0, ly, 0))
+        .add(fwd.clone().multiplyScalar(-0.45));
+
+      bulb.position.copy(worldBulbPos);
+      group.add(bulb);
+      bulbs.push({ mesh: bulb, baseColor: baseColor.clone(), index: i });
+    }
+
+    // ── Illumination light — PointLight that lights up the farm ──
+    const bbLight = new THREE.PointLight(0xffdd88, 3.5, 150, 1.5);
+    bbLight.position.set(bbPos.x, bbGH + postH + boardH * 0.7, bbPos.z);
+    // Offset toward farm center so light falls on farm buildings
+    const toFarm = new THREE.Vector3(fcx - bbPos.x, 0, fcz - bbPos.z).normalize();
+    bbLight.position.add(toFarm.clone().multiplyScalar(3));
+    bbLight.castShadow = false; // perf: skip shadow for point light
+    group.add(bbLight);
+
+    // Secondary coloured accent light (red/amber glow)
+    const accentLight = new THREE.PointLight(0xff6622, 2.0, 100, 1.8);
+    accentLight.position.copy(bbLight.position).add(new THREE.Vector3(0, -3, 0));
+    group.add(accentLight);
+
+    // ── Top crown — decorative arched element ──
+    const crownGeo = new THREE.TorusGeometry(3, 0.3, 8, 16, Math.PI);
+    const crownMat = new THREE.MeshStandardMaterial({ color: 0xffcc00, emissive: 0xffaa00, emissiveIntensity: 0.8, metalness: 0.5, roughness: 0.3 });
+    const crown = new THREE.Mesh(crownGeo, crownMat);
+    crown.position.set(bbPos.x, bbGH + postH + boardH + 1.5, bbPos.z);
+    crown.rotation.y = angle + Math.PI;
+    crown.rotation.x = 0;
+    group.add(crown);
+
+    // Store references for animation in the render loop
+    group.userData.billboardBulbs  = bulbs;
+    group.userData.billboardLight  = bbLight;
+    group.userData.billboardAccent = accentLight;
+  })();
 }
 
 /* =============================================================
@@ -973,8 +1165,8 @@ function addFarmCompound(group, getH) {
    ============================================================= */
 function addMountainVegetation(group, getH, noise, scatter) {
   // ── Alpine Shrubs (low, wind-shaped bushes on high terrain) ──
-  const shrubCount = 500;
-  const shrubGeo = new THREE.SphereGeometry(1, 8, 6);
+  const shrubCount = 750;
+  const shrubGeo = new THREE.SphereGeometry(1, 10, 8);
   shrubGeo.scale(1.2, 0.4, 1);
   const shrubMat = new THREE.MeshStandardMaterial({
     color: 0x3a5e28, roughness: 0.92,
@@ -1011,8 +1203,8 @@ function addMountainVegetation(group, getH, noise, scatter) {
   group.add(shrubMesh);
 
   // ── Mountain Wildflowers (small coloured tufts on high terrain) ──
-  const flowerCount = 400;
-  const flowerGeo = new THREE.SphereGeometry(0.3, 6, 4);
+  const flowerCount = 600;
+  const flowerGeo = new THREE.SphereGeometry(0.3, 8, 6);
   flowerGeo.scale(1, 0.6, 1);
   const flowerMat = new THREE.MeshStandardMaterial({
     color: 0xffffff, roughness: 0.8,
@@ -1053,7 +1245,7 @@ function addMountainVegetation(group, getH, noise, scatter) {
   group.add(flowerMesh);
 
   // ── Mountain Grass (short hardy tufts on rocky slopes) ──
-  const mGrassCount = 800;
+  const mGrassCount = 1200;
   const mGrassGeo = new THREE.PlaneGeometry(0.5, 1.2, 1, 2);
   const mgPos = mGrassGeo.attributes.position;
   for (let i = 0; i < mgPos.count; i++) {
@@ -1100,7 +1292,7 @@ function addMountainVegetation(group, getH, noise, scatter) {
    ============================================================= */
 function addRiparianVegetation(group, getH, noise, scatter) {
   // ── Dense green grass patches near water ──
-  const patchCount = 600;
+  const patchCount = 900;
   const patchGeo = new THREE.PlaneGeometry(1.2, 2.5, 1, 2);
   const pPos = patchGeo.attributes.position;
   for (let i = 0; i < pPos.count; i++) {
@@ -1141,8 +1333,8 @@ function addRiparianVegetation(group, getH, noise, scatter) {
   group.add(patchMesh);
 
   // ── Wildflower clusters near water ──
-  const flowerCount = 500;
-  const flowerGeo = new THREE.SphereGeometry(0.25, 6, 4);
+  const flowerCount = 750;
+  const flowerGeo = new THREE.SphereGeometry(0.25, 8, 6);
   flowerGeo.scale(1, 0.5, 1);
   const flowerMat = new THREE.MeshStandardMaterial({
     color: 0xffffff, roughness: 0.75,
@@ -1184,7 +1376,7 @@ function addRiparianVegetation(group, getH, noise, scatter) {
   group.add(flowerMesh);
 
   // ── Reeds at water edges ──
-  const reedCount = 300;
+  const reedCount = 450;
   const reedGeo = new THREE.CylinderGeometry(0.08, 0.12, 3, 4);
   reedGeo.translate(0, 1.5, 0);
   const reedMat = new THREE.MeshStandardMaterial({
@@ -1221,8 +1413,8 @@ function addRiparianVegetation(group, getH, noise, scatter) {
   group.add(reedMesh);
 
   // ── Riparian shrubs (larger bushes near water) ──
-  const rShrubCount = 300;
-  const rShrubGeo = new THREE.SphereGeometry(1.3, 8, 6);
+  const rShrubCount = 450;
+  const rShrubGeo = new THREE.SphereGeometry(1.3, 10, 8);
   rShrubGeo.scale(1, 0.7, 1);
   const rShrubMat = new THREE.MeshStandardMaterial({
     color: 0x2e7a1e, roughness: 0.88,

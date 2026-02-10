@@ -224,6 +224,158 @@ textarea {
 .btn-block { width: 100%; }
 .btn-sm { padding: 5px 10px; font-size: 12px; }
 
+/* ── Settings panel ──────────────────────────── */
+.settings-section-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  font-weight: 600;
+  margin: 16px 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-section-title:first-of-type { margin-top: 4px; }
+
+/* Presets row */
+.settings-presets {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.settings-preset-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.settings-preset-btn:hover {
+  border-color: var(--text-3);
+  background: rgba(255,255,255,0.04);
+}
+.settings-preset-btn.active {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+.settings-preset-icon { font-size: 18px; line-height: 1; }
+.settings-preset-label {
+  font-size: 10px;
+  color: var(--text-2);
+  font-weight: 500;
+}
+.settings-preset-btn.active .settings-preset-label { color: var(--accent); }
+
+/* Range slider rows */
+.settings-range-group {
+  margin-bottom: 12px;
+}
+.settings-range-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+.settings-range-label {
+  font-size: 12px;
+  color: var(--text-2);
+  font-weight: 500;
+}
+.settings-range-value {
+  font-size: 12px;
+  color: var(--text-1);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Slider track */
+.settings-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  outline: none;
+  cursor: pointer;
+}
+.settings-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg-panel);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+.settings-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+.settings-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg-panel);
+  cursor: pointer;
+}
+
+/* Toggle rows */
+.settings-toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  cursor: pointer;
+}
+.settings-toggle-label {
+  font-size: 12px;
+  color: var(--text-2);
+  font-weight: 500;
+}
+.settings-toggle {
+  display: inline-flex;
+  align-items: center;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--border);
+  padding: 2px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.settings-toggle.on {
+  background: var(--accent);
+}
+.settings-toggle-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+.settings-toggle.on .settings-toggle-thumb {
+  transform: translateX(16px);
+}
+
+/* Action buttons */
+.settings-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
 /* ── Legend ───────────────────────────────────── */
 .legend-item {
   display: flex;
@@ -881,7 +1033,7 @@ textarea {
   padding: 12px 18px;
   border: none;
   background: none;
-  color: var(--text-3);
+  color: rgba(255,255,255,0.7);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -889,7 +1041,7 @@ textarea {
   transition: color 0.15s, border-color 0.15s;
   white-space: nowrap;
 }
-.hm-tab:hover { color: var(--text-2); }
+.hm-tab:hover { color: #fff; }
 .hm-tab.active {
   color: var(--accent);
   border-bottom-color: var(--accent);

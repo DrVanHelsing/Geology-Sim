@@ -98,9 +98,31 @@ const useStore = create(
       set({ loadingProgress: progress, loadingMessage: message, isLoaded: progress >= 100 }),
 
     // ── Settings ─────────────────────────────────
-    settings: { waterLevel: 42, fogDensity: 0.00028, sunElevation: 55 },
+    settings: {
+      waterLevel: 42,
+      fogDensity: 0.00024,
+      sunElevation: 55,
+      exposure: 1.35,
+      showVegetation: true,
+      showShadows: true,
+      enableSSAO: true,
+      cameraSpeed: 1.0,
+    },
     updateSettings: (patch) =>
       set((s) => ({ settings: { ...s.settings, ...patch } })),
+    resetSettings: () =>
+      set({
+        settings: {
+          waterLevel: 42,
+          fogDensity: 0.00024,
+          sunElevation: 55,
+          exposure: 1.35,
+          showVegetation: true,
+          showShadows: true,
+          enableSSAO: true,
+          cameraSpeed: 1.0,
+        },
+      }),
   })),
 );
 

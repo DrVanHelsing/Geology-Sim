@@ -144,8 +144,8 @@ function CameraTab() {
             <ArrowCluster />
           </div>
           <div className="hm-control-info">
-            <div className="hm-control-label">Move Focus</div>
-            <div className="hm-control-desc">Use WASD or arrow keys to move the camera focus point across the terrain — forward, back, left, and right.</div>
+            <div className="hm-control-label">Move Camera</div>
+            <div className="hm-control-desc">Use WASD or arrow keys to physically move the camera across the terrain — forward, back, left, and right relative to where you're looking.</div>
           </div>
         </div>
         {/* Elevation */}
@@ -155,7 +155,7 @@ function CameraTab() {
           </div>
           <div className="hm-control-info">
             <div className="hm-control-label">Elevation</div>
-            <div className="hm-control-desc">Q lowers and E raises the camera focus point vertically — useful for inspecting cliff faces or getting an aerial view.</div>
+            <div className="hm-control-desc">Q lowers and E raises the camera vertically — useful for inspecting cliff faces or getting an aerial view.</div>
           </div>
         </div>
         {/* Shift boost */}
@@ -165,7 +165,7 @@ function CameraTab() {
           </div>
           <div className="hm-control-info">
             <div className="hm-control-label">Speed Boost</div>
-            <div className="hm-control-desc">Hold Shift with any movement key for 2.5× faster traversal.</div>
+            <div className="hm-control-desc">Hold Shift with any movement key for 3× faster traversal.</div>
           </div>
         </div>
       </div>

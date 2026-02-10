@@ -132,6 +132,11 @@ export default function useSceneEngine(containerRef) {
         engine.updateWaterLevel(settings.waterLevel);
         engine.updateFogDensity(settings.fogDensity);
         engine.updateSunElevation(settings.sunElevation);
+        engine.updateExposure(settings.exposure);
+        engine.setVegetationVisible(settings.showVegetation);
+        engine.setShadowsEnabled(settings.showShadows);
+        engine.setSSAOEnabled(settings.enableSSAO);
+        engine.setCameraSpeed(settings.cameraSpeed);
       },
     );
 

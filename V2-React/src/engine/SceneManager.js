@@ -40,6 +40,9 @@ export class SceneManager {
     this.markersGroup = new THREE.Group();
     this.hoverMarker  = null;
     this.sunLight     = null;
+    this._hemiLight    = null;
+    this._fillLight    = null;
+    this._rimLight     = null;
     this._sunDir      = new THREE.Vector3(0.75, 0.4, 0.45).normalize();
     this._postFX      = null;
 
@@ -77,17 +80,17 @@ export class SceneManager {
     // Renderer
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setSize(container.clientWidth, container.clientHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(window.devicePixelRatio);  // full native resolution
     this.renderer.shadowMap.enabled  = true;
     this.renderer.shadowMap.type     = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping        = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 1.35;
     this.renderer.outputColorSpace   = THREE.SRGBColorSpace;
     container.appendChild(this.renderer.domElement);
 
     // Scene + fog
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2(0xc8d8e8, 0.00028);
+    this.scene.fog = new THREE.FogExp2(0xd0e0f0, 0.00024);
 
     // Camera
     this.camera = new THREE.PerspectiveCamera(
@@ -98,17 +101,17 @@ export class SceneManager {
     // Controls — smooth orbit camera
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping    = true;
-    this.controls.dampingFactor    = 0.18;       // higher = more fluid/responsive
+    this.controls.dampingFactor    = 0.12;
     this.controls.maxDistance      = 4000;
-    this.controls.minDistance      = 20;
-    this.controls.maxPolarAngle    = Math.PI * 0.48;  // ~88°
-    this.controls.minPolarAngle    = 0.09;             // ~5°
+    this.controls.minDistance      = 2;           // allow very close-up views
+    this.controls.maxPolarAngle    = Math.PI * 0.49;  // ~88°
+    this.controls.minPolarAngle    = 0.05;             // ~3°
     this.controls.enablePan        = true;
     this.controls.panSpeed         = 0.8;
     this.controls.screenSpacePanning = true;
     this.controls.keyPanSpeed      = 0;          // we handle keyboard ourselves
-    this.controls.rotateSpeed      = 0.4;
-    this.controls.zoomSpeed        = 1.2;        // scroll zoom only
+    this.controls.rotateSpeed      = 0.5;
+    this.controls.zoomSpeed        = 1.4;
     this.controls.mouseButtons     = {
       LEFT:   THREE.MOUSE.ROTATE,
       MIDDLE: THREE.MOUSE.PAN,
@@ -119,6 +122,14 @@ export class SceneManager {
       TWO: THREE.TOUCH.DOLLY_PAN,
     };
     this.controls.target.set(0, 80, 0);
+
+    // ── Scroll-wheel: dolly camera forward/backward along look direction ──
+    this._onWheel = (e) => {
+      // Let OrbitControls handle its own zoom; we add a forward dolly on top
+      // Only if we want to override completely, uncomment below:
+      // e.preventDefault();
+    };
+    // (Scroll zoom is already handled by OrbitControls zoomSpeed above)
 
     // ── Keyboard state tracking for WASD/QE/+- camera ──
     this._keys = {};
@@ -212,16 +223,16 @@ export class SceneManager {
   //  Lighting
   // ──────────────────────────────────────────────
   _setupLighting() {
-    // Hemisphere light — sky/ground ambient (boosted for lower sun angle)
-    this.scene.add(new THREE.HemisphereLight(0x87ceeb, 0x4e6b3c, 0.55));
+    // Hemisphere light — sky/ground ambient
+    this._hemiLight = new THREE.HemisphereLight(0x9ad8f0, 0x5e8b44, 0.95);
+    this.scene.add(this._hemiLight);
 
     // Directional sun — aligned with the shared _sunDir vector
-    this.sunLight = new THREE.DirectionalLight(0xfff4e0, 1.6);
-    // Position the light along the sun direction, far enough for shadow coverage
+    this.sunLight = new THREE.DirectionalLight(0xfff8e8, 2.2);
     this.sunLight.position.copy(this._sunDir).multiplyScalar(1500);
     this.sunLight.castShadow = true;
     const s = this.sunLight.shadow;
-    s.mapSize.set(2048, 2048);
+    s.mapSize.set(4096, 4096);
     s.camera.near   =    1;
     s.camera.far    = 4000;
     s.camera.left   = -1400;
@@ -233,14 +244,14 @@ export class SceneManager {
     this.scene.add(this.sunLight);
 
     // Fill light — opposite the sun for shadow softening
-    const fill = new THREE.DirectionalLight(0x8fbbda, 0.35);
-    fill.position.set(-300, 200, -400);
-    this.scene.add(fill);
+    this._fillLight = new THREE.DirectionalLight(0xa0ccee, 0.55);
+    this._fillLight.position.set(-300, 200, -400);
+    this.scene.add(this._fillLight);
 
     // Rim light for terrain edge definition — warm backlight
-    const rim = new THREE.DirectionalLight(0xffd0a0, 0.25);
-    rim.position.set(-200, 100, 500);
-    this.scene.add(rim);
+    this._rimLight = new THREE.DirectionalLight(0xffe0b0, 0.4);
+    this._rimLight.position.set(-200, 100, 500);
+    this.scene.add(this._rimLight);
   }
 
   // ──────────────────────────────────────────────
@@ -400,6 +411,30 @@ export class SceneManager {
       this.vegetation.userData.windmillBlades.rotation.z = t * 0.8;
     }
 
+    // ── Billboard chaser-light animation ──
+    if (this.vegetation?.userData?.billboardBulbs) {
+      const bulbs = this.vegetation.userData.billboardBulbs;
+      const speed = 4.0;          // chase cycles per second
+      const numBulbs = bulbs.length;
+      for (let i = 0; i < numBulbs; i++) {
+        const b = bulbs[i];
+        // Chaser wave: each bulb pulses on/off in sequence
+        const wave = Math.sin(t * speed * Math.PI * 2 - (b.index / numBulbs) * Math.PI * 2);
+        const brightness = 0.3 + 0.7 * Math.max(0, wave); // 0.3 dim → 1.0 bright
+        b.mesh.material.emissiveIntensity = brightness * 2.0;
+        // Scale slightly when bright for a "pop" effect
+        const s = 0.85 + brightness * 0.25;
+        b.mesh.scale.setScalar(s);
+      }
+      // Pulse the main billboard point light subtly
+      if (this.vegetation.userData.billboardLight) {
+        this.vegetation.userData.billboardLight.intensity = 3.0 + Math.sin(t * 3.0) * 0.8;
+      }
+      if (this.vegetation.userData.billboardAccent) {
+        this.vegetation.userData.billboardAccent.intensity = 1.8 + Math.sin(t * 2.5 + 1.0) * 0.6;
+      }
+    }
+
     // ── Underwater detection: make water transparent when camera is below surface ──
     const camBelowWater = this.camera.position.y < WATER_LEVEL;
     if (this.water?.material?.uniforms?.uSubmerged) {
@@ -420,7 +455,7 @@ export class SceneManager {
     updateAtmosphere(this.atmosphere, t);
     this._animateMarkers(t);
 
-    if (this._postFX) {
+    if (this._postFX && this._ssaoEnabled !== false) {
       this._postFX.compose(this.scene, this.camera);
     } else {
       this.renderer.render(this.scene, this.camera);
@@ -428,19 +463,19 @@ export class SceneManager {
   }
 
   // ──────────────────────────────────────────────
-  //  WASD/QE/+- keyboard movement (ported from Unity OrbitCamera)
-  //  Speed scales with camera distance for consistent feel.
+  //  WASD/Arrow keyboard movement — physically moves the camera
+  //  across the map. Speed is CONSTANT so it doesn't bottleneck
+  //  when the camera is near the ground.
   // ──────────────────────────────────────────────
   _handleKeyboardMovement(dt) {
     const k = this._keys || {};
     const tgt = this.controls.target;
     const cam = this.camera;
-    const dist = cam.position.distanceTo(tgt);
 
-    // Base speed scaled by distance — slightly faster than before
-    let speed = 300 * dt * (dist / 350);
+    // Constant base speed — NOT scaled by distance
+    let speed = 180 * dt * (this._cameraSpeedMultiplier || 1.0);
     // Shift = boost
-    if (k['ShiftLeft'] || k['ShiftRight']) speed *= 2.5;
+    if (k['ShiftLeft'] || k['ShiftRight']) speed *= 3.0;
 
     // Camera-relative directions projected onto horizontal plane
     const fwd = new THREE.Vector3();
@@ -450,26 +485,34 @@ export class SceneManager {
     const right = new THREE.Vector3();
     right.crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
 
-    let moved = false;
+    let dx = 0, dz = 0, dy = 0;
 
-    // Arrow keys — move the camera focus point (up/down/left/right on screen)
-    if (k['ArrowUp'])    { tgt.addScaledVector(fwd, speed);    moved = true; }
-    if (k['ArrowDown'])  { tgt.addScaledVector(fwd, -speed);   moved = true; }
-    if (k['ArrowLeft'])  { tgt.addScaledVector(right, -speed);  moved = true; }
-    if (k['ArrowRight']) { tgt.addScaledVector(right, speed);   moved = true; }
+    // Arrow keys — move camera physically across the map
+    if (k['ArrowUp'])    { dx += fwd.x * speed;    dz += fwd.z * speed; }
+    if (k['ArrowDown'])  { dx -= fwd.x * speed;    dz -= fwd.z * speed; }
+    if (k['ArrowLeft'])  { dx -= right.x * speed;  dz -= right.z * speed; }
+    if (k['ArrowRight']) { dx += right.x * speed;  dz += right.z * speed; }
 
-    // WASD — same movement for convenience
-    if (k['KeyW']) { tgt.addScaledVector(fwd, speed);    moved = true; }
-    if (k['KeyS']) { tgt.addScaledVector(fwd, -speed);   moved = true; }
-    if (k['KeyA']) { tgt.addScaledVector(right, -speed);  moved = true; }
-    if (k['KeyD']) { tgt.addScaledVector(right, speed);   moved = true; }
+    // WASD — same movement
+    if (k['KeyW']) { dx += fwd.x * speed;   dz += fwd.z * speed; }
+    if (k['KeyS']) { dx -= fwd.x * speed;   dz -= fwd.z * speed; }
+    if (k['KeyA']) { dx -= right.x * speed; dz -= right.z * speed; }
+    if (k['KeyD']) { dx += right.x * speed; dz += right.z * speed; }
 
     // Q/E — vertical
-    if (k['KeyQ']) { tgt.y -= speed * 0.5; moved = true; }
-    if (k['KeyE']) { tgt.y += speed * 0.5; moved = true; }
+    if (k['KeyQ']) { dy -= speed * 0.6; }
+    if (k['KeyE']) { dy += speed * 0.6; }
 
-    // Clamp target within terrain bounds
-    if (moved) {
+    if (dx !== 0 || dy !== 0 || dz !== 0) {
+      // Move both camera and orbit target together (physical movement)
+      cam.position.x += dx;
+      cam.position.y += dy;
+      cam.position.z += dz;
+      tgt.x += dx;
+      tgt.y += dy;
+      tgt.z += dz;
+
+      // Clamp within terrain bounds
       const half = TERRAIN_SIZE / 2;
       tgt.x = Math.max(-half, Math.min(half, tgt.x));
       tgt.z = Math.max(-half, Math.min(half, tgt.z));
@@ -487,7 +530,6 @@ export class SceneManager {
     if (!this.heightMap) return;
     const cam = this.camera.position;
     const halfSize = TERRAIN_SIZE / 2;
-    const margin = 8; // min height above terrain
 
     // Check if camera is over the terrain
     const overLand = Math.abs(cam.x) < halfSize && Math.abs(cam.z) < halfSize;
@@ -497,7 +539,7 @@ export class SceneManager {
       const cx = Math.max(-halfSize + 1, Math.min(halfSize - 1, cam.x));
       const cz = Math.max(-halfSize + 1, Math.min(halfSize - 1, cam.z));
       const terrainH = getTerrainHeight(this.heightMap, cx, cz);
-      const minY = terrainH + margin;
+      const minY = terrainH + 1.5;          // allow very close to ground
       if (cam.y < minY) {
         cam.y = minY;
       }
@@ -515,8 +557,8 @@ export class SceneManager {
       const tx = Math.max(-halfSize + 1, Math.min(halfSize - 1, tgt.x));
       const tz = Math.max(-halfSize + 1, Math.min(halfSize - 1, tgt.z));
       const tgtH = getTerrainHeight(this.heightMap, tx, tz);
-      if (tgt.y < tgtH + 2) {
-        tgt.y = tgtH + 2;
+      if (tgt.y < tgtH + 0.5) {
+        tgt.y = tgtH + 0.5;
       }
     }
   }
@@ -1092,13 +1134,122 @@ export class SceneManager {
   }
   updateSunElevation(deg) {
     const r = deg * Math.PI / 180;
-    const pos = new THREE.Vector3(750*Math.cos(r*0.3), 400*Math.sin(r), 450*Math.cos(r*0.5));
-    this.sunLight.position.copy(pos.clone().normalize().multiplyScalar(1500));
+    // Compute sun direction — azimuth shifts slightly with elevation for visual variety
+    const azimuth = 0.6 + (1.0 - deg / 90) * 0.3; // ~0.6 at noon, ~0.9 at dawn/dusk
+    const pos = new THREE.Vector3(
+      Math.cos(azimuth) * Math.cos(r),
+      Math.sin(r),
+      Math.sin(azimuth) * Math.cos(r),
+    );
     const dir = pos.clone().normalize();
     this._sunDir.copy(dir);
-    if (this.terrainMat) this.terrainMat.uniforms.uSunDir.value.copy(dir);
-    if (this.water?.material) this.water.material.uniforms.uSunDir.value.copy(dir);
+    this.sunLight.position.copy(dir).multiplyScalar(1500);
+
+    // ── Time-of-day interpolation (0 = horizon, 1 = overhead) ──
+    const tNorm = Math.max(0, Math.min(1, (deg - 5) / 80)); // 5°→0, 85°→1
+
+    // Sun light colour: warm gold at low angles → bright white at high angles
+    const sunR = 1.0;
+    const sunG = 0.78 + tNorm * 0.20;    // 0.78 dawn → 0.98 noon
+    const sunB = 0.50 + tNorm * 0.42;    // 0.50 dawn → 0.92 noon
+    this.sunLight.color.setRGB(sunR, sunG, sunB);
+    // Sun intensity: dimmer at low angles, brightest at ~55°+
+    this.sunLight.intensity = 1.4 + tNorm * 1.0; // 1.4 dawn → 2.4 noon
+
+    // Hemisphere light: shift sky colour warmer at dawn/dusk
+    if (this._hemiLight) {
+      const hSkyR = 0.60 + (1 - tNorm) * 0.30;  // more orange at dawn
+      const hSkyG = 0.65 + tNorm * 0.22;
+      const hSkyB = 0.72 + tNorm * 0.22;
+      this._hemiLight.color.setRGB(hSkyR, hSkyG, hSkyB);
+      this._hemiLight.intensity = 0.75 + tNorm * 0.30; // 0.75 → 1.05
+    }
+
+    // Fill light: stronger at low sun to brighten shadows
+    if (this._fillLight) {
+      this._fillLight.intensity = 0.55 - tNorm * 0.15; // 0.55 dawn → 0.40 noon
+    }
+    // Rim light: stronger at low sun for backlit drama
+    if (this._rimLight) {
+      this._rimLight.intensity = 0.45 - tNorm * 0.15; // 0.45 dawn → 0.30 noon
+      this._rimLight.color.setRGB(1.0, 0.76 + tNorm * 0.12, 0.50 + tNorm * 0.25);
+    }
+
+    // Fog colour: warm haze at dawn/dusk → cool blue at midday
+    const fogR = 0.82 - tNorm * 0.06;  // warmer at dawn
+    const fogG = 0.78 + tNorm * 0.08;
+    const fogB = 0.74 + tNorm * 0.18;
+    if (this.scene.fog) {
+      this.scene.fog.color.setRGB(fogR, fogG, fogB);
+    }
+
+    // Horizon colour for water reflections
+    const horizCol = new THREE.Color(fogR, fogG, fogB);
+
+    // Propagate sun direction + horizon colour to all shader systems
+    if (this.terrainMat) {
+      this.terrainMat.uniforms.uSunDir.value.copy(dir);
+      if (this.terrainMat.uniforms.uFogColorNear) {
+        this.terrainMat.uniforms.uFogColorNear.value.setRGB(fogR, fogG, fogB);
+      }
+    }
+    // Ocean
+    if (this.water?.material) {
+      this.water.material.uniforms.uSunDir.value.copy(dir);
+      if (this.water.material.uniforms.uHorizonColor) {
+        this.water.material.uniforms.uHorizonColor.value.copy(horizCol);
+      }
+    }
+    // Lakes
+    if (this.lakeWater) {
+      this.lakeWater.traverse((child) => {
+        if (child.material?.uniforms?.uSunDir) {
+          child.material.uniforms.uSunDir.value.copy(dir);
+        }
+        if (child.material?.uniforms?.uHorizonColor) {
+          child.material.uniforms.uHorizonColor.value.copy(horizCol);
+        }
+      });
+    }
+    // River
+    if (this.riverWater) {
+      this.riverWater.traverse((child) => {
+        if (child.material?.uniforms?.uSunDir) {
+          child.material.uniforms.uSunDir.value.copy(dir);
+        }
+        if (child.material?.uniforms?.uHorizonColor) {
+          child.material.uniforms.uHorizonColor.value.copy(horizCol);
+        }
+      });
+    }
+    // Atmosphere sky dome
     if (this.atmosphere?.material) this.atmosphere.material.uniforms.uSunDir.value.copy(dir);
+    // Sun sphere + glow follow direction
+    if (this.atmosphere?.sunMesh) {
+      this.atmosphere.sunMesh.position.copy(dir).multiplyScalar(6000);
+    }
+    if (this.atmosphere?.glowMesh) {
+      this.atmosphere.glowMesh.position.copy(dir).multiplyScalar(6000);
+    }
+  }
+
+  updateExposure(val) {
+    this.renderer.toneMappingExposure = val;
+  }
+  setVegetationVisible(visible) {
+    if (this.vegetation) this.vegetation.visible = visible;
+  }
+  setShadowsEnabled(on) {
+    this.renderer.shadowMap.enabled = on;
+    if (this.sunLight) this.sunLight.castShadow = on;
+    // Force shadow map update
+    this.renderer.shadowMap.needsUpdate = true;
+  }
+  setSSAOEnabled(on) {
+    this._ssaoEnabled = on;
+  }
+  setCameraSpeed(multiplier) {
+    this._cameraSpeedMultiplier = multiplier;
   }
 
   // ──────────────────────────────────────────────

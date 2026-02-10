@@ -3,7 +3,7 @@
 // ================================================================
 
 export const TERRAIN_SIZE = 2000; // 2km × 2km
-export const SEGMENTS = 384;
+export const SEGMENTS = 512;      // FHD terrain mesh resolution
 export const WATER_LEVEL = 38;    // lowered for deeper valleys & river beds
 
 /**

@@ -93,7 +93,7 @@ export function createAtmosphere(sunDir) {
   const dir = sunDir ?? new THREE.Vector3(0.75, 0.4, 0.45).normalize();
 
   // ── Sky dome ──
-  const geo = new THREE.SphereGeometry(8000, 48, 48);
+  const geo = new THREE.SphereGeometry(8000, 64, 64);
   const mat = new THREE.ShaderMaterial({
     uniforms: {
       uSunDir: { value: dir },
