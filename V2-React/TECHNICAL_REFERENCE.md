@@ -755,191 +755,149 @@ Both meshes are parented to the sky dome group and returned in the atmosphere ob
 
 ---
 
+
 ## Water Shaders (Ocean, Lakes, River)
 
 **File**: `src/engine/WaterSystem.js`
 
+### Unified Water Shading Philosophy
+
+All three water bodies (ocean, lakes, river) share the same high-quality fragment shading pipeline. Each has its own complete standalone vertex and fragment shader — no string replacement or shader patching. The shared quality features are:
+
+- **Fresnel-Schlick** (F0=0.04, pow 4) — physically based view-dependent reflectivity
+- **Quad sun specular** (2048+512+64+12 power) — tight core, bloom, wide glow, ultra-wide haze
+- **Sun-path shimmer** — broad luminous streak (pow 8)
+- **Sparkle / sun glitter** — noise-based micro-facet glints (`pow(vnoise, 8) * pow(NdH, 8) * 6.0`)
+- **fbm3 micro-ripple** normal perturbation (3-octave FBM at scale 0.12)
+- **Forward + back subsurface scattering** (forward: `pow(dot(V,-L), 3) * 0.35`, back: `pow(dot(N,L), 2) * 0.12`)
+- **3-octave caustic shimmer** (scales 0.03, 0.08, 0.18)
+- **Horizon-colour reflection blending** at grazing angles (`pow(1-R.y, 3) * 0.5`)
+- **Sun-lit diffuse** (`max(dot(N,L), 0) * 0.22`)
+- **Fog with horizon-haze blending** (exponential² density)
+
 ### Gerstner Wave (Ocean Vertex Shader)
 
 ```glsl
-vec3 gerstner(vec3 pos, float time) {
-  vec3 result = pos;
-  // 6 wave components (w1–w6)
-  for (int i = 0; i < 6; i++) {
-    float freq = waveFreqs[i];
-    float amp = waveAmps[i];
-    float steep = waveSteep[i];
-    vec2 dir = waveDirs[i];
-
-    float phase = freq * dot(dir, pos.xz) + time * freq * 1.5;
-    // Gerstner displacement
-    result.x += steep * amp * dir.x * cos(phase);
-    result.z += steep * amp * dir.y * cos(phase);
-    result.y += amp * sin(phase);
-  }
-  return result;
+vec3 gerstner(vec3 p, float t, vec2 dir, float freq, float amp, float steep) {
+  float phase = dot(dir, p.xz) * freq + t;
+  float s = sin(phase), c = cos(phase);
+  return vec3(steep * amp * dir.x * c, amp * s, steep * amp * dir.y * c);
 }
+
+// 8 wave components with distance-based amplitude fade
+float waveFade = smoothstep(8000.0, 2000.0, distFromCentre);
+vec3 w1 = gerstner(pos, t*0.8,  normalize(vec2(1,0.3)),   0.012, 0.70, 0.65) * waveFade;
+vec3 w2 = gerstner(pos, t*0.6,  normalize(vec2(-0.3,1)),  0.018, 0.50, 0.55) * waveFade;
+// ... w3-w8 with increasing frequency, decreasing amplitude
+vec3 w8 = gerstner(pos, t*2.0,  normalize(vec2(-0.6,0.8)),0.16,  0.018, 0.18) * waveFade;
 ```
 
-The ocean uses a 400×400 vertex grid on a **20 000 m × 20 000 m plane** (10× terrain size), extending to the visible horizon to create an island-in-the-ocean illusion. Wave amplitude is attenuated at distance via `smoothstep(8000, 2000, distFromCentre)`, and a horizon-haze fog blend softens the geometric edge.
+The ocean uses a 400×400 vertex grid on a **20 000 m × 20 000 m plane** (10× terrain size). Wave amplitude is attenuated at distance via `smoothstep(8000, 2000, distFromCentre)`.
 
-**Why 6 waves**: Four Gerstner components produced recognisable periodicity. Adding two high-frequency waves (w5: freq 0.065, amp 0.07; w6: freq 0.09, amp 0.04) breaks up the repeating pattern and adds fine-scale surface chop, significantly improving visual realism.
+**Why 8 waves**: Six Gerstner components produced recognisable periodicity at mid-range. Adding two high-frequency waves (w7: freq 0.12, amp 0.03; w8: freq 0.16, amp 0.018) breaks up the repeating pattern and adds fine-scale surface chop.
 
-**Why Gerstner**: Gerstner waves model the circular orbital motion of water particles on the surface, producing the realistic trochoid wave profile (sharp crest, flat trough) that characterises real ocean waves. Simple sine displacement produces rounded symmetric waves that look artificial.
+**Why Gerstner**: Gerstner waves model the circular orbital motion of water particles, producing the realistic trochoid wave profile (sharp crest, flat trough) that characterises real ocean waves.
+
+### Shore Waves
+
+```glsl
+// Island coastline ≈ 750–950 from centre
+float shoreProx = 1.0 - smoothstep(650.0, 1050.0, distXZ);
+vec2 toShore = normalize(pos.xz);
+
+// 3 overlapping inward-moving breaking wave components
+float shoalPhase1 = dot(toShore, pos.xz) * 0.025 - t * 1.6;
+float shoalPhase2 = dot(toShore, pos.xz) * 0.040 - t * 2.2;
+float shoalPhase3 = dot(toShore, pos.xz) * 0.018 - t * 1.0;
+float shoreWave = sin(shoalPhase1)*0.45 + sin(shoalPhase2)*0.25 + sin(shoalPhase3)*0.60;
+
+// Noise-randomised timing
+float shoreNoise = sin(dot(toShore, vec2(127.1,311.7))*3.0 + t*0.3)*0.5 + 0.5;
+pos.y += shoreWave * shoreProx * waveFade * 0.6 * (0.5 + shoreNoise * 0.5);
+```
+
+**Why shore waves**: Without them, the ocean near the island appeared static and unrealistic. The 3 overlapping components at different frequencies create irregular, natural-looking surf. `shoreProx` confines shore waves to a doughnut-shaped zone around the coastline, and `shoreNoise` ensures breakers don't all arrive simultaneously.
 
 ### Ocean Fresnel Reflection
 
 ```glsl
-// Fresnel-Schlick: more reflective at grazing angles
-float F0 = 0.02;  // water at normal incidence
-float fresnel = F0 + (1.0 - F0) * pow(1.0 - NdotV, 5.0);
+float fresnel = 0.04 + 0.96 * pow(1.0 - cosTheta, 4.0);
 
-// Sky reflection with horizon colour blending
-vec3 reflected = reflect(-viewDir, normal);
-float skyGrad = reflected.y * 0.5 + 0.5;
-vec3 skyColor = mix(vec3(0.6, 0.7, 0.8), vec3(0.3, 0.5, 0.8), skyGrad);
-skyColor += uHorizonColor * pow(1.0 - reflected.y, 3.0) * 0.4;
-
-// Sun-path shimmer (wide column of light toward camera)
-float shimmer = pow(max(0.0, dot(reflected, sunDir)), 16.0) * 0.35;
-
-// Deep-ocean darkening at distance
-float distDarken = smoothstep(1500.0, 6000.0, distFromCentre) * 0.5;
-
-// Depth-based water colour
-float depth = waterLevel - terrainHeight;
-vec3 shallowColor = vec3(0.1, 0.5, 0.5);
-vec3 deepColor = vec3(0.02, 0.08, 0.15);
-vec3 waterColor = mix(shallowColor, deepColor, smoothstep(0.0, 30.0, depth));
-waterColor -= vec3(distDarken);
-
-color = mix(waterColor, skyColor, fresnel) + sunColor * shimmer;
+vec3 R = reflect(-V, N);
+vec3 skyRefl = mix(uSkyColor * 0.9, uSkyColor * 1.5, max(R.y, 0.0));
+float horizonBlend = pow(1.0 - max(R.y, 0.0), 3.0);
+vec3 reflColor = mix(skyRefl, uHorizonColor * 1.15, horizonBlend * 0.5);
 ```
 
-**Horizon colour blending**: The `uHorizonColor` uniform matches the atmospheric sky dome's horizon band. At grazing reflection angles (`pow(1.0 - R.y, 3)`), the sky colour gradually transitions to this warm horizon hue, producing the realistic effect of distant reflections picking up the atmospheric haze colour rather than deep-sky blue.
+**Horizon colour blending**: The `uHorizonColor` uniform matches the atmospheric sky dome's horizon band. At grazing angles, reflections transition to the warm horizon hue, reproducing real atmospheric haze reflections.
 
-**Sun-path shimmer**: A broad `pow(16)` specular term creates the wide column of specular light that stretches across water between the sun and the camera. This is distinct from the sharp triple specular (1024+256+48) which models the direct sun pinpoint; the shimmer captures the mesoscale sun glitter pattern.
-
-### Triple Specular Highlights
+### Quad Specular Highlights
 
 ```glsl
-// Sharp specular (sun core reflection)
-float spec1 = pow(max(0.0, dot(reflected, sunDir)), 1024.0);
-// Medium specular (sun spread)
-float spec2 = pow(max(0.0, dot(reflected, sunDir)), 256.0);
-// Broad specular (sky glow)
-float spec3 = pow(max(0.0, dot(reflected, sunDir)), 48.0);
-color += sunColor * (spec1 * 3.0 + spec2 * 0.6 + spec3 * 0.15);
+vec3 H = normalize(L + V);
+float NdH = max(dot(N, H), 0.0);
+float spec1 = pow(NdH, 2048.0) * 8.0;   // tight bright core
+float spec2 = pow(NdH, 512.0) * 2.5;    // bloom
+float spec3 = pow(NdH, 64.0) * 0.5;     // wide glow
+float spec4 = pow(NdH, 12.0) * 0.12;    // ultra-wide haze
 ```
 
-**Why triple specular**: Dual specular (512 + 64) lacked the bright central pinpoint of real sun glitter. Adding a 1024-power core creates a tiny hard highlight visible at long range, the 256-power spread fills the surrounding area, and the 48-power glow provides atmospheric scatter. Together they reproduce the multi-scale sun reflection seen on real water surfaces.
+**Why quad specular**: Triple specular (1024+256+48) lacked the bright central pinpoint and the ultra-wide atmospheric haze. The 2048-power core creates a tiny hard highlight visible at long range, while the 12-power ultra-wide haze provides atmospheric sun glow. Together the four terms reproduce multi-scale sun reflection on real water.
 
-### Multi-Octave Caustic Shimmer
+### Lake Shaders (Standalone)
 
-```glsl
-float distFade = smoothstep(3000.0, 800.0, distFromCentre);
-float c1 = vnoise(worldPos.xz * 0.3 + time * vec2(0.5, 0.3));
-float c2 = vnoise(worldPos.xz * 0.7 + time * vec2(-0.3, 0.4));
-float caustic = (pow(c1, 3.0) * 0.12 + pow(c2, 4.0) * 0.06) * distFade;
-color += vec3(caustic);
-```
-
-**Why distance-faded caustics**: On the expanded 20 km ocean plane, caustic noise tiles become visible as a repetitive pattern beyond ~3 km. The `smoothstep(3000, 800, dist)` fade eliminates this by smoothly reducing caustic intensity with distance, while preserving the full effect near the island where detail is needed.
-
-### Lake Gerstner Waves
+Lake shaders are complete standalone GLSL (`lakeVertShader`, `lakeFragShader`) — not derived from the ocean shader via string patching.
 
 ```glsl
-// 5-component Gerstner wave system (vertex shader)
-vec3 displaced = position;
-for (int i = 0; i < 5; i++) {
-  float phase = wFreqs[i] * dot(wDirs[i], position.xz) + uTime * wSpeeds[i];
-  displaced.x += wSteep[i] * wAmps[i] * wDirs[i].x * cos(phase);
-  displaced.z += wSteep[i] * wAmps[i] * wDirs[i].y * cos(phase);
-  displaced.y += wAmps[i] * sin(phase);
+// Lake vertex: 8 Gerstner waves scaled to unit-circle geometry
+vec3 allWaves(vec3 p, float t) {
+  return gerstner(p,t*0.8,normalize(vec2(1,0.3)),3.0,0.012,0.65)
+       + gerstner(p,t*0.6,normalize(vec2(-0.3,1)),4.5,0.009,0.55)
+       // ... 8 waves total with lake-appropriate frequencies (3.0–40.0)
+       + gerstner(p,t*2.0,normalize(vec2(-0.6,0.8)),40.0,0.0003,0.18);
 }
-
-// Finite-difference normal calculation
-float eps = 0.5;
-vec3 dx = gerstnerDisplace(position + vec3(eps,0,0)) - gerstnerDisplace(position - vec3(eps,0,0));
-vec3 dz = gerstnerDisplace(position + vec3(0,0,eps)) - gerstnerDisplace(position - vec3(0,0,eps));
-vec3 normal = normalize(cross(dz, dx));
 ```
 
-Lake geometry uses `CircleGeometry(1, 96)` (up from 64 segments) for smoother shoreline silhouettes.
+Lake geometry uses `CircleGeometry(1, 128)` (up from 96 segments) for smoother shoreline silhouettes. Normals are computed via finite differences of the `allWaves()` helper.
 
-**Why Gerstner for lakes**: The original sinusoidal ripple system (3 components with analytical normals) produced symmetrical, wave-pool-like surface motion. Gerstner waves create physically correct trochoid profiles (sharp crests, flat troughs) even at small amplitudes, producing convincing wind-ripple motion on enclosed water bodies.
+**Lake-specific fragment features**:
+- Centre-depth darkening: `mix(waterBody, vec3(0.02, 0.10, 0.22), (1.0 - edgeDist) * 0.3)`
+- Alpha 0.88 (ocean uses 0.85 modulated by `uSubmerged`)
+- No distance-fading of sparkle/caustics (lakes are always close-up)
 
-**Why finite-difference normals**: For a multi-wave Gerstner sum, the analytical normal involves summing partial derivatives of all 5 wave components — computationally equivalent to evaluating the wave function twice more (forward + backward samples). Finite-difference normals (`cross(dz, dx)` from ε-offset evaluations) are simpler to implement, numerically stable for 5+ wave components, and produce identical visual quality.
-
-The lake fragment shader additionally includes **horizon-colour reflection blending** (`uHorizonColor * pow(1.0 - R.y, 3.0) * 0.35`), **sun-path shimmer** (`pow(dot(R, L), 16) * 0.25`), enhanced SSS (intensity 0.22, warmer translucency), and increased diffuse contribution (0.14). These additions bring lake surfaces to visual parity with the ocean.
+**Why standalone shaders**: The previous approach used `waterFrag.replace()` to patch the ocean fragment shader for lake use. This was fragile — missing varying declarations, broken uniform references. Clean standalone shaders are reliable, readable, and maintainable.
 
 ### Lake Water Level
 
-Lake water surfaces are placed at `minRimElevation + 1.8 m` (previously `minRim - 0.3 m`). Combined with deeper basin carving (16–24 m), this ensures lakes appear convincingly full with water visibly lapping at the shoreline rather than sitting below the rim.
+Lake water surfaces are placed at `minRimElevation + 1.8 m`. Combined with deeper basin carving (16–24 m), this ensures lakes appear convincingly full.
 
-### River Flow Shader
+### River Shaders (Standalone)
 
-```glsl
-// Vertex shader: 5-component flowing ripples along UV.y (downstream)
-float ripple = 0.0;
-ripple += sin(uv.y * 12.0 + uTime * 2.5) * 0.08;
-ripple += sin(uv.y * 18.0 + uTime * 1.8 + 1.5) * 0.05;
-ripple += sin(uv.y * 25.0 + uTime * 3.2 + 0.8) * 0.03;
-ripple += sin(uv.y * 33.0 + uTime * 4.0 + 2.3) * 0.018;
-ripple += sin(uv.y * 40.0 + uTime * 5.5 + 3.7) * 0.012;
-pos.y += ripple;
-
-// Flow-aware finite-difference normals (UV-space)
-float eps = 0.002;
-vec3 posU = computeDisplacement(uv + vec2(eps, 0.0));
-vec3 posD = computeDisplacement(uv - vec2(eps, 0.0));
-vec3 posR = computeDisplacement(uv + vec2(0.0, eps));
-vec3 posL = computeDisplacement(uv - vec2(0.0, eps));
-vec3 flowNormal = normalize(cross(posR - posL, posU - posD));
-```
+River shaders are also complete standalone GLSL (`riverVertShader`, `riverFragShader`).
 
 ```glsl
-// Fragment shader: 3-octave flow-aligned caustics
-float flow = vUv.y * 8.0 + uTime * 2.0;
-float c1 = vnoise(vec2(vUv.x * 5.0, flow * 0.5));
-float c2 = vnoise(vec2(vUv.x * 9.0, flow * 0.8 + 3.0));
-float c3 = vnoise(vec2(vUv.x * 14.0, flow * 1.2 + 6.0));
-float caustic = c1 * 0.15 + pow(c2, 2.0) * 0.08 + pow(c3, 3.0) * 0.04;
-
-// Edge foam (noise-driven, near banks)
-float edgeDist = abs(vUv.x - 0.5) * 2.0;
-float foam = smoothstep(0.7, 1.0, edgeDist) *
-             vnoise(vec2(vUv.x * 20.0, flow * 0.6)) * 0.3;
-
-// Flow streaks (thin bright lines moving downstream)
-float streak = sin(vUv.x * 60.0 + vUv.y * 8.0 - uTime * 3.0);
-streak = smoothstep(0.92, 1.0, streak) *
-         (1.0 - smoothstep(0.3, 0.7, edgeDist)) * 0.12;
-
-// Subsurface scattering (enhanced: 0.18 intensity)
-float sss = pow(max(0.0, dot(viewDir, -sunDir)), 4.0) * 0.18;
-
-vec3 waterColor = mix(deepColor, shallowColor, edgeDist);
-waterColor += vec3(0.0, sss, sss * 0.5) + foam + streak;
+// River vertex: 5-frequency downstream flow waves
+float flowBias = uv.y * 6.0 - t * 2.0;
+pos.y += sin(flowBias) * 0.15
+       + sin(uv.y * 10.0 - t * 2.8 + uv.x * 3.0) * 0.08
+       + sin(uv.y * 16.0 - t * 3.5 + uv.x * 5.0) * 0.04
+       + sin(uv.y * 25.0 - t * 4.5) * 0.02
+       + sin(uv.y * 40.0 - t * 6.0 + uv.x * 8.0) * 0.01;
 ```
 
-The river fragment shader also uses triple specular (1024 + 128 + 32 exponents), **sun-path shimmer** (`pow(dot(R, L), 16) * 0.2`), and **horizon-colour reflection blending** matching the ocean and lake systems.
+Normals are computed via finite differences of the flow-wave field in UV space.
 
-**Why 5-component ripples**: The original 2-component system produced a clearly periodic wave pattern. Upgrading to 4, then 5 components with frequencies from 12 to 40 and decreasing amplitudes progressively breaks up visible repetition at every viewing distance. The 5th high-frequency component (freq 40, speed 5.5) adds fine-scale turbulence visible only at close range.
+**River-specific fragment features**:
+- **Edge-to-centre depth gradient**: `mix(uShallowColor, uDeepColor, edgeFade * 0.6 + depthFactor * 0.2)`
+- **Flow-aligned caustics**: UV.y-scrolling caustic noise simulating light patterns moving downstream
+- **Edge foam**: `vnoise(vec2(vRiverUV.x*10, vRiverUV.y*20 - uTime*1.2)) * edgeProx` — foam near banks
+- Alpha 0.88
 
-**Why flow-aware normals**: The previous analytical normal approximation could not account for the multi-frequency displacement surface. Finite-difference normals computed from 4 UV-space neighbours produce geometrically accurate normals for the displaced surface, enabling correct specular reflections that shift with the flow.
+**Why 5-frequency flow waves**: Frequencies from 6 to 40 with decreasing amplitudes (0.15 → 0.01) break up visible repetition at every viewing distance.
 
-**Edge foam**: Shallow, turbulent water at riverbanks naturally generates foam. The noise-driven foam pattern (`vnoise` modulated by bank proximity) scrolls downstream with the flow, simulating realistic bank-edge turbulence.
+**Why flow-aware normals**: Finite-difference normals from UV-space neighbours produce accurate normals for the displaced surface, enabling correct specular reflections that shift with the flow.
 
-**Flow streaks**: Thin bright lines moving downstream simulate the visual effect of sunlit current threads on the water surface — a phenomenon visible on real rivers when viewed from above.
-
-**Why 3-octave caustics**: The third octave (freq ×14, speed ×1.2) adds fine-grained dappled light that enriches the interference pattern, especially at close range where 2-octave patterns appeared too uniform.
-
-**Why SSS**: Light transmitted through shallow water acquires a characteristic green-blue tint as it scatters through the water column. The enhanced intensity (0.18, up from 0.08) with warmer translucency colours produces more visible backlighting when viewing toward the sun, improving the perception of river depth.
-
-**Why UV-based flow**: The river's V-coordinate naturally increases along its length. Scrolling the wave function along V creates the visual impression of water flowing downstream. Edge distance from UV.x = 0.5 (centre) provides automatic bank-proximity shading.
-
----
+**Why UV-based flow**: The river's V-coordinate naturally increases along its length. Scrolling the wave function along V creates the visual impression of water flowing downstream.
 
 ## SSAO Post-Processing
 

@@ -84,13 +84,13 @@ export class SceneManager {
     this.renderer.shadowMap.enabled  = true;
     this.renderer.shadowMap.type     = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping        = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.35;
+    this.renderer.toneMappingExposure = 1.6;
     this.renderer.outputColorSpace   = THREE.SRGBColorSpace;
     container.appendChild(this.renderer.domElement);
 
     // Scene + fog
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2(0xd0e0f0, 0.00024);
+    this.scene.fog = new THREE.FogExp2(0xd0e0f0, 0.00018);
 
     // Camera
     this.camera = new THREE.PerspectiveCamera(
@@ -224,11 +224,11 @@ export class SceneManager {
   // ──────────────────────────────────────────────
   _setupLighting() {
     // Hemisphere light — sky/ground ambient
-    this._hemiLight = new THREE.HemisphereLight(0x9ad8f0, 0x5e8b44, 0.95);
+    this._hemiLight = new THREE.HemisphereLight(0x9ad8f0, 0x5e8b44, 1.25);
     this.scene.add(this._hemiLight);
 
     // Directional sun — aligned with the shared _sunDir vector
-    this.sunLight = new THREE.DirectionalLight(0xfff8e8, 2.2);
+    this.sunLight = new THREE.DirectionalLight(0xfff8e8, 3.0);
     this.sunLight.position.copy(this._sunDir).multiplyScalar(1500);
     this.sunLight.castShadow = true;
     const s = this.sunLight.shadow;
@@ -244,12 +244,12 @@ export class SceneManager {
     this.scene.add(this.sunLight);
 
     // Fill light — opposite the sun for shadow softening
-    this._fillLight = new THREE.DirectionalLight(0xa0ccee, 0.55);
+    this._fillLight = new THREE.DirectionalLight(0xa0ccee, 0.75);
     this._fillLight.position.set(-300, 200, -400);
     this.scene.add(this._fillLight);
 
     // Rim light for terrain edge definition — warm backlight
-    this._rimLight = new THREE.DirectionalLight(0xffe0b0, 0.4);
+    this._rimLight = new THREE.DirectionalLight(0xffe0b0, 0.6);
     this._rimLight.position.set(-200, 100, 500);
     this.scene.add(this._rimLight);
   }
@@ -1154,7 +1154,7 @@ export class SceneManager {
     const sunB = 0.50 + tNorm * 0.42;    // 0.50 dawn → 0.92 noon
     this.sunLight.color.setRGB(sunR, sunG, sunB);
     // Sun intensity: dimmer at low angles, brightest at ~55°+
-    this.sunLight.intensity = 1.4 + tNorm * 1.0; // 1.4 dawn → 2.4 noon
+    this.sunLight.intensity = 2.0 + tNorm * 1.2; // 2.0 dawn → 3.2 noon
 
     // Hemisphere light: shift sky colour warmer at dawn/dusk
     if (this._hemiLight) {
@@ -1162,16 +1162,16 @@ export class SceneManager {
       const hSkyG = 0.65 + tNorm * 0.22;
       const hSkyB = 0.72 + tNorm * 0.22;
       this._hemiLight.color.setRGB(hSkyR, hSkyG, hSkyB);
-      this._hemiLight.intensity = 0.75 + tNorm * 0.30; // 0.75 → 1.05
+      this._hemiLight.intensity = 1.0 + tNorm * 0.40; // 1.0 → 1.4
     }
 
     // Fill light: stronger at low sun to brighten shadows
     if (this._fillLight) {
-      this._fillLight.intensity = 0.55 - tNorm * 0.15; // 0.55 dawn → 0.40 noon
+      this._fillLight.intensity = 0.75 - tNorm * 0.15; // 0.75 dawn → 0.60 noon
     }
     // Rim light: stronger at low sun for backlit drama
     if (this._rimLight) {
-      this._rimLight.intensity = 0.45 - tNorm * 0.15; // 0.45 dawn → 0.30 noon
+      this._rimLight.intensity = 0.65 - tNorm * 0.15; // 0.65 dawn → 0.50 noon
       this._rimLight.color.setRGB(1.0, 0.76 + tNorm * 0.12, 0.50 + tNorm * 0.25);
     }
 

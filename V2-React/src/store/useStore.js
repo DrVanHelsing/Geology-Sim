@@ -100,9 +100,9 @@ const useStore = create(
     // ── Settings ─────────────────────────────────
     settings: {
       waterLevel: 42,
-      fogDensity: 0.00024,
+      fogDensity: 0.00018,
       sunElevation: 55,
-      exposure: 1.35,
+      exposure: 1.60,
       showVegetation: true,
       showShadows: true,
       enableSSAO: true,
@@ -114,9 +114,9 @@ const useStore = create(
       set({
         settings: {
           waterLevel: 42,
-          fogDensity: 0.00024,
+          fogDensity: 0.00018,
           sunElevation: 55,
-          exposure: 1.35,
+          exposure: 1.60,
           showVegetation: true,
           showShadows: true,
           enableSSAO: true,

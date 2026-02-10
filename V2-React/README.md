@@ -55,9 +55,10 @@ The application runs on commodity hardware (tested on Intel Iris Xe / i5 11th-ge
 - **Smooth layer blending**: 6 m transition zones between adjacent layers using fractional layer indices
 
 ### Water
-- **Ocean**: Horizon-scale Gerstner 6-wave animated surface (20 km × 20 km, 400×400 grid) extending to the visible horizon, creating an island-in-the-ocean illusion. Fresnel-Schlick reflection (F0=0.02), triple sun specular (1024+256+48 power) plus wide sun-path shimmer, horizon-colour sky reflection blending, multi-octave caustics (distance-faded), enhanced subsurface scattering (SSS), depth-based colour with deep-ocean darkening at distance, and horizon-haze fog blending
-- **Lakes**: 5 individual Gerstner-wave water surfaces (5 wave components, 96-segment geometry) with rim-tracking raised water levels (+1.8 m above rim), finite-difference normals, triple specular highlights plus sun-path shimmer, horizon-colour reflection blending, enhanced multi-octave caustics, boosted SSS, and sun-lit diffuse
-- **River**: Catmull-Rom ribbon mesh with 5-component flowing ripple shader (up from 4), finite-difference flow-aware normals, triple specular plus sun-path shimmer, 3-octave flow caustics, edge foam with noise-driven patterns, downstream flow streaks, enhanced SSS, variable width, and channel-floor-relative water height — visible directional flow animation
+- **Unified water rendering**: All three water bodies (ocean, lakes, river) share the same high-quality shading pipeline — Fresnel-Schlick (F0=0.04, pow 4), quad sun specular (2048+512+64+12 power), fbm3 micro-ripple normal perturbation, sparkle/sun-glitter, forward+back subsurface scattering, 3-octave caustics, horizon-colour reflection blending, and sun-lit diffuse
+- **Ocean**: Horizon-scale 8-wave Gerstner surface (20 km × 20 km, 400×400 grid) with distance-based amplitude fade. Shore waves — 3 overlapping inward-moving breaking wave components near the island coastline (650–1050 m), with noise-randomised timing so breakers arrive at different times and places. Deep-ocean darkening at distance, horizon-haze fog blending
+- **Lakes**: 5 individual water surfaces (128-segment geometry, 8 Gerstner waves scaled to unit-circle) with rim-tracking raised water levels (+1.8 m above rim), finite-difference normals, centre-depth darkening tint
+- **River**: Catmull-Rom ribbon mesh with 5-frequency downstream flow waves, finite-difference flow-aware normals, flow-aligned caustics, edge foam with noise-driven patterns near banks, variable width, and channel-floor-relative water height — visible directional flow animation
 
 ### Vegetation & Structures
 - **Trees**: 600 pines (3-layered cones), 450 oaks (lumpy merged spheres), 250 birches (near-water preference)
@@ -79,7 +80,8 @@ The application runs on commodity hardware (tested on Intel Iris Xe / i5 11th-ge
 - **3D sun orb**: Emissive sun sphere (r=120) with BackSide glow sphere (r=300) positioned along sun direction at 6000 m, aligned with all shader sun directions and directional light
 - **SSAO post-processing**: 12-tap rotated kernel with distance-adaptive radius and golden-angle sampling
 - **Aerial perspective fog**: dual near/far colour exponential²
-- **ACES Filmic tone mapping** at 1.15 exposure
+- **Boosted island lighting**: Sun intensity 3.0 (dynamic 2.0–3.2), hemisphere 1.25 (1.0–1.4), fill 0.75, rim 0.6, exposure 1.60, reduced fog density 0.00018 for bright, vivid island visuals
+- **ACES Filmic tone mapping** at 1.60 exposure
 - **Shadow mapping**: 2048² PCF soft shadows from directional sun light (positioned along shared sun direction vector, shadow frustum ±1400)
 
 ### Tools
@@ -254,29 +256,41 @@ Height range: approximately 25–280 m. Water level: 38 m.
 
 ## Water System
 
+### Unified Water Shading Pipeline
+All three water bodies share the same fragment shader features:
+- **Fresnel-Schlick** (F0=0.04, pow 4) for physically accurate view-dependent reflectivity
+- **Quad sun specular** (2048+512+64+12 power) — tight core, bloom, wide glow, ultra-wide haze
+- **Sun-path shimmer** — broad luminous streak toward camera (pow 8)
+- **Sparkle / sun glitter** — noise-based micro-facet glints
+- **fbm3 micro-ripple** normal perturbation for close-up detail
+- **Forward + back subsurface scattering** with green-blue translucency
+- **3-octave caustic shimmer**
+- **Horizon-colour reflection blending** at grazing angles
+- **Sun-lit diffuse** (0.22)
+- **Fog with horizon-haze blending**
+
 ### Ocean
-- Horizon-scale geometry: `PlaneGeometry(20000, 20000, 400, 400)` — 10× terrain size, extending well beyond the camera far plane for a seamless ocean-to-sky horizon
-- Gerstner 6-wave vertex displacement (frequencies 0.015–0.09, amplitudes 0.04–0.55, steepnesses 0.25–0.6) with distance-based wave amplitude fade to prevent edge artifacts
-- Normals computed from finite differences of the displaced surface
-- Fragment shader: Fresnel-Schlick (F0=0.02), horizon-colour sky reflection blending, triple-power sun specular (1024 + 256 + 48) plus wide sun-path shimmer (pow 16), distance-faded multi-octave caustic shimmer, deep-ocean darkening at distance, enhanced SSS (0.22), sun-lit diffuse, horizon-haze fog blending
+- Horizon-scale geometry: `PlaneGeometry(20000, 20000, 400, 400)` — 10× terrain size
+- 8-wave Gerstner vertex displacement (frequencies 0.012–0.16, amplitudes 0.018–0.70, steepnesses 0.18–0.65) with distance-based amplitude fade
+- **Shore waves**: 3 overlapping inward-moving breaking wave components near the island coastline (650–1050 m from centre), with noise-randomised timing so breakers arrive at different times and places, creating subtle random surf
+- Normals computed from finite differences of the 8-wave displaced surface
+- Distance-faded sparkle and caustics; deep-ocean darkening at distance
 - Creates an island illusion — terrain appears as a landmass surrounded by open ocean stretching to the horizon
 
 ### Lakes
-- 5 individual `CircleGeometry(1, 96)` surfaces scaled to elliptical lake dimensions
-- Deeper basin carving (16–24 m depth) with raised water level (rim + 1.8 m) for fuller, more visible lakes
-- Gerstner 5-wave vertex displacement with finite-difference normals
-- Triple sun specular (1024 + 256 + 48) plus sun-path shimmer, horizon-colour reflection blending, multi-octave caustics, enhanced SSS (0.22), shallow/deep colour blending, sun-lit diffuse
-- Consistent reflection model shared across all water bodies
+- 5 individual `CircleGeometry(1, 128)` surfaces scaled to elliptical lake dimensions
+- Deeper basin carving (16–24 m depth) with raised water level (rim + 1.8 m)
+- 8-wave Gerstner vertex displacement (lake-scaled frequencies) with finite-difference normals via `allWaves()` helper
+- Centre-depth darkening tint for deeper lake interiors
 
 ### River
 - Catmull-Rom subdivided ribbon mesh (81 cross-section pairs)
 - Variable width along path (±20% sinusoidal)
 - Water height = channel floor + 6 m
-- 5-component flowing ripple shader (frequencies 12–40) with flow-aware finite-difference normals computed from UV-space derivatives
-- Visible flowing animation: ripples scroll downstream along the river UV.y axis at varying speeds, creating convincing directional water flow
+- 5-frequency downstream flow waves with finite-difference flow-aware normals
+- Flow-aligned caustics scrolling downstream
 - Edge foam: noise-driven foam pattern near riverbanks, simulating turbulence at shallow edges
-- Flow streaks: thin bright lines moving downstream along the water surface
-- Triple sun specular plus sun-path shimmer, 3-octave flow caustics (up from 2), enhanced SSS (0.18), sun-lit diffuse, horizon-colour reflection blending
+- Edge-to-centre depth gradient for river cross-section colouring
 
 ---
 
