@@ -140,9 +140,45 @@ export default function useSceneEngine(containerRef) {
       },
     );
 
+    // ── Sync marker removals from store → 3D scene ──
+    let prevDrillIds    = useStore.getState().drillMarkers.map((m) => m.id);
+    let prevMeasureIds  = useStore.getState().measureMarkers.map((m) => m.id);
+    let prevStrikeDipIds = useStore.getState().strikeDipResults.map((m) => m.id);
+
+    const unsubDrill = useStore.subscribe(
+      (s) => s.drillMarkers,
+      (markers) => {
+        const newIds = markers.map((m) => m.id);
+        const removed = prevDrillIds.filter((id) => !newIds.includes(id));
+        removed.forEach((id) => engine.removeMarkerById(id));
+        prevDrillIds = newIds;
+      },
+    );
+    const unsubMeasure = useStore.subscribe(
+      (s) => s.measureMarkers,
+      (markers) => {
+        const newIds = markers.map((m) => m.id);
+        const removed = prevMeasureIds.filter((id) => !newIds.includes(id));
+        removed.forEach((id) => engine.removeMarkerById(id));
+        prevMeasureIds = newIds;
+      },
+    );
+    const unsubStrikeDip = useStore.subscribe(
+      (s) => s.strikeDipResults,
+      (results) => {
+        const newIds = results.map((m) => m.id);
+        const removed = prevStrikeDipIds.filter((id) => !newIds.includes(id));
+        removed.forEach((id) => engine.removeMarkerById(id));
+        prevStrikeDipIds = newIds;
+      },
+    );
+
     return () => {
       unsubTool();
       unsubSettings();
+      unsubDrill();
+      unsubMeasure();
+      unsubStrikeDip();
       engine.dispose();
       engineRef.current = null;
     };

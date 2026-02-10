@@ -5,6 +5,8 @@ export default function DrillPanel() {
   const result       = useStore((s) => s.drillResult);
   const drillMarkers = useStore((s) => s.drillMarkers);
   const setResult    = useStore((s) => s.setDrillResult);
+  const removeDrill  = useStore((s) => s.removeDrillMarker);
+  const clearDrill   = useStore((s) => s.clearDrillMarkers);
   const showPopup    = useStore((s) => s.showRockPopup);
 
   if (!result) {
@@ -15,7 +17,7 @@ export default function DrillPanel() {
           Select the <strong>Drill</strong> tool (3) and click on the terrain to extract a core.
         </p>
         {drillMarkers.length > 0 && (
-          <DrillMarkerList markers={drillMarkers} onSelect={setResult} />
+          <DrillMarkerList markers={drillMarkers} onSelect={setResult} onRemove={removeDrill} onClearAll={clearDrill} />
         )}
       </>
     );
@@ -93,39 +95,53 @@ export default function DrillPanel() {
 
       {/* Saved drill markers list */}
       {drillMarkers.length > 1 && (
-        <DrillMarkerList markers={drillMarkers} activeId={result.id} onSelect={setResult} />
+        <DrillMarkerList markers={drillMarkers} activeId={result.id} onSelect={setResult} onRemove={removeDrill} onClearAll={clearDrill} />
       )}
     </>
   );
 }
 
-function DrillMarkerList({ markers, activeId, onSelect }) {
+function DrillMarkerList({ markers, activeId, onSelect, onRemove, onClearAll }) {
   return (
     <div style={{ marginTop: 14 }}>
-      <div style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600, marginBottom: 6 }}>
-        Saved Drill Cores ({markers.length})
+      <div style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600, marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>Saved Drill Cores ({markers.length})</span>
+        {markers.length > 0 && (
+          <button
+            onClick={onClearAll}
+            style={{ fontSize: 10, color: '#f85149', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}
+            title="Clear all drill markers"
+          >Clear All</button>
+        )}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {markers.map((m) => {
           const isActive = m.id === activeId;
           const totalDepth = m.results.length > 0 ? m.results[m.results.length - 1].endDepth : 0;
           return (
-            <button
-              key={m.id}
-              onClick={() => onSelect(m)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: '6px 8px', borderRadius: 4, border: 'none',
-                background: isActive ? 'rgba(255,85,51,0.15)' : 'rgba(255,255,255,0.04)',
-                color: isActive ? '#ff8866' : 'var(--text-2)',
-                cursor: 'pointer', fontSize: 12, textAlign: 'left',
-                outline: isActive ? '1px solid rgba(255,85,51,0.3)' : 'none',
-              }}
-            >
-              <span style={{ fontWeight: 600 }}>⛏</span>
-              <span>({m.position.x.toFixed(0)}, {m.position.z.toFixed(0)})</span>
-              <span style={{ marginLeft: 'auto', opacity: 0.6 }}>{totalDepth.toFixed(0)}m deep</span>
-            </button>
+            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <button
+                onClick={() => onSelect(m)}
+                style={{
+                  flex: 1,
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '6px 8px', borderRadius: 4, border: 'none',
+                  background: isActive ? 'rgba(255,85,51,0.15)' : 'rgba(255,255,255,0.04)',
+                  color: isActive ? '#ff8866' : 'var(--text-2)',
+                  cursor: 'pointer', fontSize: 12, textAlign: 'left',
+                  outline: isActive ? '1px solid rgba(255,85,51,0.3)' : 'none',
+                }}
+              >
+                <span style={{ fontWeight: 600 }}>⛏</span>
+                <span>({m.position.x.toFixed(0)}, {m.position.z.toFixed(0)})</span>
+                <span style={{ marginLeft: 'auto', opacity: 0.6 }}>{totalDepth.toFixed(0)}m deep</span>
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onRemove(m.id); }}
+                style={{ background: 'none', border: 'none', color: '#f85149', cursor: 'pointer', padding: '4px 6px', fontSize: 13, lineHeight: 1, borderRadius: 4 }}
+                title="Remove marker"
+              >×</button>
+            </div>
           );
         })}
       </div>

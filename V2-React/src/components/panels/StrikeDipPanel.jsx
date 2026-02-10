@@ -6,6 +6,7 @@ import useStore from '../../store/useStore';
 export default function StrikeDipPanel() {
   const results        = useStore((s) => s.strikeDipResults);
   const clear          = useStore((s) => s.clearStrikeDip);
+  const removeOne      = useStore((s) => s.removeStrikeDip);
   const selectedMarker = useStore((s) => s.selectedMarker);
 
   // Determine which result card to highlight
@@ -50,6 +51,11 @@ export default function StrikeDipPanel() {
                 <div className="sd-result-header">
                   <span className="sd-result-num">#{i + 1}</span>
                   <span className="sd-result-layer">{r.layerName}</span>
+                  <button
+                    onClick={() => removeOne(r.id)}
+                    style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#f85149', cursor: 'pointer', padding: '2px 6px', fontSize: 13, lineHeight: 1, borderRadius: 4 }}
+                    title="Remove this measurement"
+                  >×</button>
                 </div>
 
                 <div className="sd-result-body">

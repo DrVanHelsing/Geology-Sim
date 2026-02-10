@@ -7,6 +7,8 @@ export default function MeasurePanel() {
   const result         = useStore((s) => s.measureResult);
   const setResult      = useStore((s) => s.setMeasureResult);
   const measureMarkers = useStore((s) => s.measureMarkers);
+  const removeMeasure  = useStore((s) => s.removeMeasureMarker);
+  const clearAll       = useStore((s) => s.clearMeasureMarkers);
   const engineRef      = useEngine();
 
   const handleClear = () => {
@@ -23,7 +25,7 @@ export default function MeasurePanel() {
           on the terrain to measure distance, bearing, and elevation change.
         </p>
         {measureMarkers.length > 0 && (
-          <MeasureMarkerList markers={measureMarkers} onSelect={setResult} />
+          <MeasureMarkerList markers={measureMarkers} onSelect={setResult} onRemove={removeMeasure} onClearAll={clearAll} />
         )}
       </>
     );
@@ -80,41 +82,55 @@ export default function MeasurePanel() {
 
       {/* Saved measurements list */}
       {measureMarkers.length > 1 && (
-        <MeasureMarkerList markers={measureMarkers} activeId={result.id} onSelect={setResult} />
+        <MeasureMarkerList markers={measureMarkers} activeId={result.id} onSelect={setResult} onRemove={removeMeasure} onClearAll={clearAll} />
       )}
     </>
   );
 }
 
-function MeasureMarkerList({ markers, activeId, onSelect }) {
+function MeasureMarkerList({ markers, activeId, onSelect, onRemove, onClearAll }) {
   return (
     <div style={{ marginTop: 14 }}>
-      <div style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600, marginBottom: 6 }}>
-        Saved Measurements ({markers.length})
+      <div style={{ fontSize: 12, color: 'var(--text-2)', fontWeight: 600, marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>Saved Measurements ({markers.length})</span>
+        {markers.length > 0 && (
+          <button
+            onClick={onClearAll}
+            style={{ fontSize: 10, color: '#f85149', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}
+            title="Clear all measure markers"
+          >Clear All</button>
+        )}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {markers.map((m) => {
           const isActive = m.id === activeId;
           return (
-            <button
-              key={m.id}
-              onClick={() => onSelect(m)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: '6px 8px', borderRadius: 4, border: 'none',
-                background: isActive ? 'rgba(255,107,107,0.15)' : 'rgba(255,255,255,0.04)',
-                color: isActive ? '#ff8888' : 'var(--text-2)',
-                cursor: 'pointer', fontSize: 12, textAlign: 'left',
-                outline: isActive ? '1px solid rgba(255,107,107,0.3)' : 'none',
-              }}
-            >
-              <span style={{ fontWeight: 600 }}>📏</span>
-              <span>{m.distance.toFixed(1)}m</span>
-              <span style={{ opacity: 0.6 }}>{m.bearing.toFixed(0)}°</span>
-              <span style={{ marginLeft: 'auto', opacity: 0.6 }}>
-                Δ{m.elevChange >= 0 ? '+' : ''}{m.elevChange.toFixed(1)}m
-              </span>
-            </button>
+            <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <button
+                onClick={() => onSelect(m)}
+                style={{
+                  flex: 1,
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '6px 8px', borderRadius: 4, border: 'none',
+                  background: isActive ? 'rgba(255,107,107,0.15)' : 'rgba(255,255,255,0.04)',
+                  color: isActive ? '#ff8888' : 'var(--text-2)',
+                  cursor: 'pointer', fontSize: 12, textAlign: 'left',
+                  outline: isActive ? '1px solid rgba(255,107,107,0.3)' : 'none',
+                }}
+              >
+                <span style={{ fontWeight: 600 }}>📏</span>
+                <span>{m.distance.toFixed(1)}m</span>
+                <span style={{ opacity: 0.6 }}>{m.bearing.toFixed(0)}°</span>
+                <span style={{ marginLeft: 'auto', opacity: 0.6 }}>
+                  Δ{m.elevChange >= 0 ? '+' : ''}{m.elevChange.toFixed(1)}m
+                </span>
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onRemove(m.id); }}
+                style={{ background: 'none', border: 'none', color: '#f85149', cursor: 'pointer', padding: '4px 6px', fontSize: 13, lineHeight: 1, borderRadius: 4 }}
+                title="Remove marker"
+              >×</button>
+            </div>
           );
         })}
       </div>
