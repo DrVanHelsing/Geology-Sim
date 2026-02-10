@@ -9,6 +9,15 @@ export default function DrillPanel() {
   const clearDrill   = useStore((s) => s.clearDrillMarkers);
   const showPopup    = useStore((s) => s.showRockPopup);
 
+  const handleRemove = (id) => {
+    removeDrill(id);
+    if (result?.id === id) setResult(null);
+  };
+  const handleClearAll = () => {
+    clearDrill();
+    setResult(null);
+  };
+
   if (!result) {
     return (
       <>
@@ -17,7 +26,7 @@ export default function DrillPanel() {
           Select the <strong>Drill</strong> tool (3) and click on the terrain to extract a core.
         </p>
         {drillMarkers.length > 0 && (
-          <DrillMarkerList markers={drillMarkers} onSelect={setResult} onRemove={removeDrill} onClearAll={clearDrill} />
+          <DrillMarkerList markers={drillMarkers} onSelect={setResult} onRemove={handleRemove} onClearAll={handleClearAll} />
         )}
       </>
     );
@@ -28,7 +37,14 @@ export default function DrillPanel() {
 
   return (
     <>
-      <div className="panel-header"><DrillIcon /> Drill Core Result</div>
+      <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span><DrillIcon /> Drill Core Result</span>
+        <button
+          onClick={() => handleRemove(result.id)}
+          style={{ fontSize: 10, color: '#f85149', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}
+          title="Remove this drill core"
+        >Remove</button>
+      </div>
 
       <div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 12 }}>
         Location: ({position.x.toFixed(0)}, {position.z.toFixed(0)})
@@ -95,7 +111,7 @@ export default function DrillPanel() {
 
       {/* Saved drill markers list */}
       {drillMarkers.length > 1 && (
-        <DrillMarkerList markers={drillMarkers} activeId={result.id} onSelect={setResult} onRemove={removeDrill} onClearAll={clearDrill} />
+        <DrillMarkerList markers={drillMarkers} activeId={result.id} onSelect={setResult} onRemove={handleRemove} onClearAll={handleClearAll} />
       )}
     </>
   );

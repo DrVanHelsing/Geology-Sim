@@ -8,11 +8,19 @@ export default function MeasurePanel() {
   const setResult      = useStore((s) => s.setMeasureResult);
   const measureMarkers = useStore((s) => s.measureMarkers);
   const removeMeasure  = useStore((s) => s.removeMeasureMarker);
-  const clearAll       = useStore((s) => s.clearMeasureMarkers);
+  const clearAllMarkers = useStore((s) => s.clearMeasureMarkers);
   const engineRef      = useEngine();
 
   const handleClear = () => {
     if (engineRef?.current) clearMeasure(engineRef.current);
+    setResult(null);
+  };
+  const handleRemove = (id) => {
+    removeMeasure(id);
+    if (result?.id === id) setResult(null);
+  };
+  const handleClearAll = () => {
+    clearAllMarkers();
     setResult(null);
   };
 
@@ -25,7 +33,7 @@ export default function MeasurePanel() {
           on the terrain to measure distance, bearing, and elevation change.
         </p>
         {measureMarkers.length > 0 && (
-          <MeasureMarkerList markers={measureMarkers} onSelect={setResult} onRemove={removeMeasure} onClearAll={clearAll} />
+          <MeasureMarkerList markers={measureMarkers} onSelect={setResult} onRemove={handleRemove} onClearAll={handleClearAll} />
         )}
       </>
     );
@@ -82,7 +90,7 @@ export default function MeasurePanel() {
 
       {/* Saved measurements list */}
       {measureMarkers.length > 1 && (
-        <MeasureMarkerList markers={measureMarkers} activeId={result.id} onSelect={setResult} onRemove={removeMeasure} onClearAll={clearAll} />
+        <MeasureMarkerList markers={measureMarkers} activeId={result.id} onSelect={setResult} onRemove={handleRemove} onClearAll={handleClearAll} />
       )}
     </>
   );

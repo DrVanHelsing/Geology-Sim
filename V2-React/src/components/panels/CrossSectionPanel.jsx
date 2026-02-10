@@ -3,6 +3,8 @@
 // ================================================================
 import { useRef, useEffect } from 'react';
 import useStore from '../../store/useStore';
+import { useEngine } from '../../context/SceneContext';
+import { clearCrossSection } from '../../tools/ToolManager';
 import { LAYERS, WATER_LEVEL } from '../../config/geology';
 
 const PAD = { top: 28, right: 24, bottom: 44, left: 56 };
@@ -10,8 +12,15 @@ const CANVAS_W = 720;
 const CANVAS_H = 420;
 
 export default function CrossSectionPanel() {
-  const data      = useStore((s) => s.crossSection);
-  const canvasRef = useRef(null);
+  const data       = useStore((s) => s.crossSection);
+  const setData    = useStore((s) => s.setCrossSection);
+  const engineRef  = useEngine();
+  const canvasRef  = useRef(null);
+
+  const handleClear = () => {
+    if (engineRef?.current) clearCrossSection(engineRef.current);
+    setData(null);
+  };
 
   useEffect(() => {
     if (!data || !canvasRef.current) return;
@@ -31,7 +40,14 @@ export default function CrossSectionPanel() {
 
   return (
     <div className="panel-content crosssection-panel">
-      <h3 style={{ margin: '0 0 6px', fontSize: 15 }}>Cross-Section</h3>
+      <h3 style={{ margin: '0 0 6px', fontSize: 15, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>Cross-Section</span>
+        <button
+          onClick={handleClear}
+          style={{ fontSize: 10, color: '#f85149', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', fontWeight: 400 }}
+          title="Clear cross-section"
+        >Clear</button>
+      </h3>
       <div className="cs-meta">
         <span>Bearing: <b>{data.bearing.toFixed(1)}°</b></span>
         <span>Length: <b>{data.totalDistance.toFixed(0)} m</b></span>
