@@ -198,8 +198,8 @@ function ToolsTab() {
           realWorld="Using a tape, rangefinder or GPS to measure distances. Elevation differences reveal bed thickness and structural offsets."
         />
         <ToolCard
-          icon={StrikeDipIcon} shortcut="5" name="Strike & Dip"
-          desc="Click an outcrop to calculate the strike and dip of the bedding plane — the fundamental structural measurement."
+          icon={StrikeDipIcon} shortcut="5" name="Dip Direction / Dip"
+          desc="Click an outcrop to calculate the dip direction and dip of the bedding plane — the fundamental structural measurement (avoids right-hand-rule ambiguity)."
           realWorld="Using a Brunton compass-clinometer to record the 3D orientation of rock layers, faults and foliations."
         />
         <ToolCard
@@ -218,7 +218,7 @@ function ShortcutsTab() {
     { keys: ['2'], action: 'Identify Rock tool', cat: 'Tools' },
     { keys: ['3'], action: 'Drill Core tool', cat: 'Tools' },
     { keys: ['4'], action: 'Measure tool', cat: 'Tools' },
-    { keys: ['5'], action: 'Strike & Dip tool', cat: 'Tools' },
+    { keys: ['5'], action: 'Dip Dir / Dip tool', cat: 'Tools' },
     { keys: ['6'], action: 'Cross-Section tool', cat: 'Tools' },
     { keys: ['L'], action: 'Toggle Layer Legend', cat: 'Panels' },
     { keys: ['N'], action: 'Toggle Field Notebook', cat: 'Panels' },

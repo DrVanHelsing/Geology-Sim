@@ -10,7 +10,7 @@ const TOOLS = [
   { id: 'identify', icon: IdentifyIcon, tip: 'Identify Rock (2)' },
   { id: 'drill',    icon: DrillIcon,    tip: 'Drill Core (3)' },
   { id: 'measure',     icon: MeasureIcon,      tip: 'Measure (4)' },
-  { id: 'strikedip',   icon: StrikeDipIcon,    tip: 'Strike & Dip (5)' },
+  { id: 'strikedip',   icon: StrikeDipIcon,    tip: 'Dip Dir / Dip (5)' },
   { id: 'crosssection', icon: CrossSectionIcon, tip: 'Cross-Section (6)' },
 ];
 

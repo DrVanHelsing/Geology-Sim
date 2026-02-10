@@ -39,9 +39,9 @@ const SECTIONS = [
         realWorld: 'Field geologists use measuring tapes, rangefinders, or GPS to measure distances between features. Elevation differences help calculate bed thickness, slope angles, and structural offsets.',
       },
       {
-        label: 'Strike & Dip (5)',
-        desc: 'Click on an outcrop to calculate the strike and dip of the bedding plane at that point. Strike is the compass bearing of the horizontal line on the bed surface; dip is the angle of maximum slope.',
-        realWorld: 'Strike and dip are the most fundamental structural measurements in geology. They record the 3D orientation of rock layers, faults, and foliations using a compass clinometer (Brunton compass). Every geological map relies on these measurements.',
+        label: 'Dip Dir / Dip (5)',
+        desc: 'Click on an outcrop to calculate the dip direction and dip of the bedding plane at that point. Dip direction is the compass bearing of the steepest descent on the bed surface; dip is the angle of that slope. This avoids the right-hand-rule ambiguity of strike notation.',
+        realWorld: 'Dip direction and dip are the most intuitive way to record the 3D orientation of rock layers. They correspond directly to the direction and angle a ball would roll down the bed surface. Many modern geological surveys prefer this convention over strike/dip.',
       },
       {
         label: 'Cross-Section (6)',
@@ -57,7 +57,7 @@ const SECTIONS = [
       { label: '2', desc: 'Identify Rock tool' },
       { label: '3', desc: 'Drill Core tool' },
       { label: '4', desc: 'Measure tool' },
-      { label: '5', desc: 'Strike & Dip tool' },
+      { label: '5', desc: 'Dip Dir / Dip tool' },
       { label: '6', desc: 'Cross-Section tool' },
       { label: 'L', desc: 'Toggle Layer Legend panel' },
       { label: 'N', desc: 'Toggle Field Notebook panel' },

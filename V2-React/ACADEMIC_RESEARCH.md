@@ -382,6 +382,30 @@ This section catalogues the significant technical challenges encountered during 
 
 **Solution**: Added a range-check falloff: samples where `|depth_sample - depth_centre| > threshold` are excluded from the occlusion accumulation. Additionally, the final AO is blended 50/50 with white (`0.5 + 0.5 * ao`) to soften the effect.
 
+### 10. Strike/Dip Marker Bedding Plane Tilt
+
+**Problem**: The original strike/dip disc marker sat flat (horizontal) regardless of the measured dip angle, failing to convey the actual bedding plane orientation in 3D.
+
+**Root cause**: All marker geometry (disc, strike line, dip arrow, chevrons) was constructed in the flat XZ plane at y=0 with no rotation applied for dip.
+
+**Solution**: A tilt group (`THREE.Group`) wraps the disc, dip-direction arrow, and pulsing chevrons. The group is rotated around the strike axis (perpendicular to the dip direction in the XZ plane) by the dip angle using `quaternion.setFromAxisAngle(strikeAxis, -dipRad)`. The strike line and its endpoint spheres remain outside the tilt group since strike is by definition horizontal. The centre sphere and label sprite also stay upright. This produces a geometrically correct 3D representation: the disc tilts down in the dip direction, the dip arrow follows the tilted surface, and chevrons pulse along the inclined plane.
+
+### 11. Hover Marker Terrain Alignment
+
+**Problem**: The blue hover cursor rings floated flat above the terrain surface, providing no visual feedback about local slope orientation.
+
+**Root cause**: The hover marker group was positioned at the raycast hit point with a fixed vertical offset (`y + 0.8`) but its orientation was never updated — the rings always faced straight up.
+
+**Solution**: On each mousemove, the raycast intersection’s `face.normal` is transformed to world space via `hit.face.normal.clone().transformDirection(terrain.matrixWorld).normalize()` and used to orient the hover marker via `quaternion.setFromUnitVectors(Vector3(0,1,0), normal)`. The double-ring cursor now tilts to lie parallel to whatever terrain surface the mouse hovers over — slopes, cliffs, ridges — giving immediate visual feedback of local surface orientation before any tool click.
+
+### 12. Drill Rig Orientation (Pivot Sign Error)
+
+**Problem**: Changing the drill azimuth and inclination settings did not visibly tilt the 3D drill rig marker.
+
+**Root cause**: The pivot group’s rotation signs were inverted (`rotation.y = -azRad` and `rotation.x = -incRad`), causing the rig to rotate in the wrong direction by equal but opposite amounts.
+
+**Solution**: Corrected to `rotation.y = azRad` and `rotation.x = incRad`, matching the geological convention where azimuth rotates clockwise from north and inclination tilts from vertical.
+
 ---
 
 ## Academic & Training Applications
@@ -390,9 +414,9 @@ This section catalogues the significant technical challenges encountered during 
 
 1. **Geological Mapping Exercises**: Students can use the drill, identify, and cross-section tools to map outcrop patterns, identify the fault, trace fold axes, and produce geological maps and cross-sections — the core skills of a field mapping course.
 
-2. **Stratigraphic Correlation**: The drill core tool reveals subsurface stratigraphy at any point. Students can drill multiple boreholes and correlate layers, learning about lateral facies changes and structural complications.
+2. **Stratigraphic Correlation**: The drill core tool reveals subsurface stratigraphy at any point with configurable **inclination, azimuth, and depth** — allowing inclined boreholes that intersect targets at oblique angles, just as in real exploration drilling. Students can drill multiple boreholes at different orientations and correlate layers, learning about lateral facies changes, structural complications, and the effect of borehole orientation on intercepted stratigraphy.
 
-3. **Structural Geology Practicals**: The strike-and-dip tool demonstrates bedding orientation measurement. Students can take multiple measurements across the map, plot them on the stereonet visualisation, and interpret fold geometry.
+3. **Structural Geology Practicals**: The **Dip Direction / Dip** tool demonstrates bedding orientation measurement using the geologically standard Dip Direction / Dip notation (avoiding right-hand-rule confusion). The 3D marker’s disc **tilts to match the actual bedding plane**, the strike line stays horizontal, and pulsing chevrons animate along the dip direction — giving students an immediate visual sense of bedding attitude. Marker size and intensity scale with dip angle, so steep dips are visually prominent. Students can take multiple measurements across the map, plot them on the Wulff net stereonet and 3D sphere visualisations, and interpret fold geometry.
 
 4. **Rock Identification Training**: The rock identifier provides mineral assemblage, grain size, texture, fossils, and age information — teaching students to associate visual appearance with geological properties.
 

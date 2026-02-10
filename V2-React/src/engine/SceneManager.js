@@ -312,6 +312,11 @@ export class SceneManager {
       const hit = this._raycastTerrain();
       if (hit) {
         this.hoverMarker.position.set(hit.point.x, hit.point.y + 0.8, hit.point.z);
+        // Align hover marker parallel to the terrain surface
+        if (hit.face) {
+          const normal = hit.face.normal.clone().transformDirection(this.terrain.matrixWorld).normalize();
+          this.hoverMarker.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
+        }
         this.hoverMarker.visible = this.activeTool !== 'navigate';
         // Tool-specific hover color
         const col = toolColors[this.activeTool] ?? 0x58a6ff;
@@ -614,10 +619,27 @@ export class SceneManager {
         if (d.pillarMat) d.pillarMat.opacity = 0.5 + Math.sin(dt * 2) * 0.15;
       }
       else if (d.type === 'strikeDip') {
-        // Pulse disc
-        if (d.disc) d.disc.material.opacity = 0.12 + Math.sin(dt * 2) * 0.08;
+        const inten = d.intensity || 1;
+        // Pulse disc — stronger with steeper dip
+        if (d.disc) d.disc.material.opacity = 0.06 + inten * 0.08 + Math.sin(dt * (1.5 + inten)) * 0.04 * inten;
         // Pulse centre
-        if (d.centreMat) d.centreMat.emissiveIntensity = 0.2 + Math.sin(dt * 3) * 0.2;
+        if (d.centreMat) d.centreMat.emissiveIntensity = 0.15 + inten * 0.15 + Math.sin(dt * (2 + inten * 2)) * 0.25 * inten;
+        // Animate pulsing chevrons along dip direction
+        if (d.chevrons && d.chevrons.length > 0) {
+          const speed = 1.0 + inten * 1.2;   // faster pulse for steeper dip
+          const span = d.chevrons.length * 0.9;
+          for (let ci = 0; ci < d.chevrons.length; ci++) {
+            const chev = d.chevrons[ci];
+            const phase = (dt * speed + ci * 0.9) % span;
+            const t = phase / span; // 0..1
+            chev.position.x = d.dipDirX * d.dipLen * t;
+            chev.position.z = d.dipDirZ * d.dipLen * t;
+            chev.position.y = 0.15;
+            const fade = t < 0.15 ? t / 0.15 : t > 0.75 ? (1 - t) / 0.25 : 1;
+            chev.material.opacity = Math.max(0, fade * 0.5 * inten + fade * 0.2);
+            chev.scale.setScalar((0.8 + t * 0.6) * (0.6 + inten * 0.4));
+          }
+        }
       }
     }
   }
@@ -694,9 +716,23 @@ export class SceneManager {
   // ──────────────────────────────────────────────
   //  PUBLIC API — Markers
   // ──────────────────────────────────────────────
-  addDrillMarker(position, markerId) {
+  addDrillMarker(position, markerId, { inclination = 0, azimuth = 0 } = {}) {
     const group = new THREE.Group();
     group.position.set(position.x, position.y, position.z);
+
+    // Tilt group to match borehole orientation
+    // inclination: degrees from vertical (0 = straight down)
+    // azimuth: compass bearing CW from N (+Z)
+    const incRad = inclination * Math.PI / 180;
+    const azRad  = azimuth * Math.PI / 180;
+
+    // Build a pivot that tilts the entire drill rig
+    const pivot = new THREE.Group();
+    // Rotate around Y to face borehole azimuth (CW from +Z/North),
+    // then tilt by inclination angle away from vertical
+    pivot.rotation.order = 'YXZ';
+    pivot.rotation.y = azRad;          // face toward azimuth (CW from N)
+    pivot.rotation.x = incRad;         // tilt away from vertical into azimuth direction
 
     // Ground impact ring (pulsing)
     const ringGeo = new THREE.RingGeometry(2.5, 4.5, 64);
@@ -726,7 +762,7 @@ export class SceneManager {
     const shaft = new THREE.Mesh(shaftGeo, shaftMat);
     shaft.position.y = 9;
     shaft.castShadow = true;
-    group.add(shaft);
+    pivot.add(shaft);
 
     // Chuck collar (rotating band at top)
     const collarGeo = new THREE.CylinderGeometry(1.4, 1.2, 2.5, 12);
@@ -736,7 +772,7 @@ export class SceneManager {
     const collar = new THREE.Mesh(collarGeo, collarMat);
     collar.position.y = 19.5;
     collar.castShadow = true;
-    group.add(collar);
+    pivot.add(collar);
 
     // Drill bit (cone at ground)
     const bitGeo = new THREE.ConeGeometry(0.9, 2.5, 8);
@@ -746,7 +782,7 @@ export class SceneManager {
     const bit = new THREE.Mesh(bitGeo, bitMat);
     bit.rotation.x = Math.PI;
     bit.position.y = -1;
-    group.add(bit);
+    pivot.add(bit);
 
     // Top beacon sphere
     const beaconGeo = new THREE.SphereGeometry(1, 12, 8);
@@ -755,7 +791,7 @@ export class SceneManager {
     });
     const beacon = new THREE.Mesh(beaconGeo, beaconMat);
     beacon.position.y = 21.5;
-    group.add(beacon);
+    pivot.add(beacon);
 
     // Tripod legs
     for (let i = 0; i < 3; i++) {
@@ -767,9 +803,10 @@ export class SceneManager {
       leg.rotation.z = Math.cos(a) * 0.18;
       leg.rotation.x = Math.sin(a) * 0.18;
       leg.castShadow = true;
-      group.add(leg);
+      pivot.add(leg);
     }
 
+    group.add(pivot);
     group.userData = { type: 'drill', markerId, ring, disc, collar, beacon, t0: performance.now() };
     this._animatedMarkers.push(group);
     this.markersGroup.add(group);
@@ -1000,78 +1037,130 @@ export class SceneManager {
     this._crossSectionPoints = []; this._crossSectionMarkers = [];
   }
 
-  addStrikeDipMarker(position, strikeAngle, markerId) {
+  addStrikeDipMarker(position, strikeAngle, markerId, dipDirection = 0, dipAngle = 0) {
     const group = new THREE.Group();
     group.position.set(position.x, position.y + 1.5, position.z);
     const strikeRad = (90 - strikeAngle) * Math.PI / 180;
 
+    // Dip direction in Three.js coords: azimuth CW from N(+Z)
+    const dipDirRad = dipDirection * Math.PI / 180;
+    // Unit vector pointing in dip direction (horizontal, XZ plane)
+    const dipDirX = Math.sin(dipDirRad);
+    const dipDirZ = Math.cos(dipDirRad);
+
+    // ── Intensity factor driven by dip angle ──
+    // 0° dip → small/subtle (0.3), 45°+ → full size/intensity (1.0)
+    const dipNorm = Math.min(dipAngle / 45, 1);           // 0..1
+    const intensity = 0.3 + dipNorm * 0.7;                 // 0.3..1.0
+    const discRadius  = 5 + intensity * 7;                 // 5..12
+    const strikeLen   = 8 + intensity * 10;                // 8..18
+    const dipLen      = 6 + intensity * 10;                // 6..16
+    const chevCount   = dipAngle < 10 ? 1 : dipAngle < 30 ? 2 : 3;
+    const arrowScale  = 0.5 + intensity * 0.7;             // 0.5..1.2
+
     // Bedding plane disc (semi-transparent)
-    const discGeo = new THREE.CircleGeometry(9, 64);
+    const discGeo = new THREE.CircleGeometry(discRadius, 64);
     discGeo.rotateX(-Math.PI / 2);
     const discMat = new THREE.MeshBasicMaterial({
-      color: 0xffa500, transparent: true, opacity: 0.2, side: THREE.DoubleSide,
+      color: 0xffa500, transparent: true, opacity: 0.15, side: THREE.DoubleSide,
     });
     const disc = new THREE.Mesh(discGeo, discMat);
     disc.position.y = 0.3;
-    group.add(disc);
 
-    // Strike line (bold orange)
-    const len = 14;
+    // ── Tilt group: rotates disc + dip arrow + chevrons to match bedding plane ──
+    // The bedding plane dips by dipAngle in the dipDirection.
+    // We tilt around the strike axis (horizontal line perpendicular to dip direction).
+    const tiltGroup = new THREE.Group();
+    // Strike axis direction (perpendicular to dip direction, in XZ plane)
+    const strikeAxisX = -dipDirZ;  // rotated 90° CCW from dip direction
+    const strikeAxisZ = dipDirX;
+    const strikeAxis = new THREE.Vector3(strikeAxisX, 0, strikeAxisZ).normalize();
+    // Tilt around strike axis — negative so disc dips downward in the dip direction
+    const dipRad = dipAngle * Math.PI / 180;
+    tiltGroup.quaternion.setFromAxisAngle(strikeAxis, -dipRad);
+    group.add(tiltGroup);
+
+    tiltGroup.add(disc);
+
+    // Strike line — stays HORIZONTAL (strike is by definition the horizontal trace)
+    const len = strikeLen;
     const strikePts = [
-      new THREE.Vector3(-Math.cos(strikeRad) * len, 0, Math.sin(strikeRad) * len),
-      new THREE.Vector3(Math.cos(strikeRad) * len, 0, -Math.sin(strikeRad) * len),
+      new THREE.Vector3(-Math.cos(strikeRad) * len, 0.3, Math.sin(strikeRad) * len),
+      new THREE.Vector3(Math.cos(strikeRad) * len, 0.3, -Math.sin(strikeRad) * len),
     ];
     const strikeGeo = new THREE.BufferGeometry().setFromPoints(strikePts);
-    group.add(new THREE.Line(strikeGeo, new THREE.LineBasicMaterial({ color: 0xffaa22, linewidth: 2 })));
+    group.add(new THREE.Line(strikeGeo, new THREE.LineBasicMaterial({ color: 0xffaa22, linewidth: 1, transparent: true, opacity: 0.25 + intensity * 0.25 })));
 
-    // Strike endpoint spheres (arrows)
-    const endGeo = new THREE.SphereGeometry(0.7, 8, 6);
-    const endMat = new THREE.MeshStandardMaterial({ color: 0xffaa22, roughness: 0.3, emissive: 0x553300, emissiveIntensity: 0.3 });
+    // Strike endpoint dots (small, subdued) — also horizontal
+    const endGeo = new THREE.SphereGeometry(0.45, 8, 6);
+    const endMat = new THREE.MeshStandardMaterial({ color: 0xffaa22, roughness: 0.4, transparent: true, opacity: 0.5 });
     for (const pt of strikePts) {
       const e = new THREE.Mesh(endGeo, endMat);
       e.position.copy(pt);
       group.add(e);
     }
 
-    // Dip direction line (perpendicular, shorter)
-    const dipRad = strikeRad - Math.PI / 2;
-    const dipLen = 9;
-    const dipEnd = new THREE.Vector3(Math.cos(dipRad) * dipLen, 0, -Math.sin(dipRad) * dipLen);
-    const dipPts = [new THREE.Vector3(0, 0, 0), dipEnd];
-    group.add(new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(dipPts),
-      new THREE.LineBasicMaterial({ color: 0xff6622, linewidth: 2 }),
+    // ── Dip direction arrow (PRIMARY — bold, with pulsing chevrons) ──
+    const dipEnd = new THREE.Vector3(dipDirX * dipLen, 0, dipDirZ * dipLen);
+    // Main dip line
+    tiltGroup.add(new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), dipEnd]),
+      new THREE.LineBasicMaterial({ color: 0xff4422, linewidth: 2 }),
     ));
 
-    // Dip arrow tip sphere
-    const dipTipGeo = new THREE.SphereGeometry(0.55, 8, 6);
-    const dipTipMat = new THREE.MeshStandardMaterial({ color: 0xff6622, roughness: 0.3, emissive: 0x441100, emissiveIntensity: 0.3 });
-    const dipTip = new THREE.Mesh(dipTipGeo, dipTipMat);
-    dipTip.position.copy(dipEnd);
-    group.add(dipTip);
+    // Arrow tip (cone pointing in dip direction, within tilted plane)
+    const arrowGeo = new THREE.ConeGeometry(1.0 * arrowScale, 2.5 * arrowScale, 8);
+    const arrowMat = new THREE.MeshStandardMaterial({
+      color: 0xff4422, roughness: 0.3, emissive: 0x661100, emissiveIntensity: 0.5,
+    });
+    const arrow = new THREE.Mesh(arrowGeo, arrowMat);
+    arrow.position.copy(dipEnd);
+    // Point cone along dip direction (in the pre-tilt local frame where Y is up)
+    const arrowTarget = new THREE.Vector3(dipDirX, 0, dipDirZ).normalize();
+    const arrowQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), arrowTarget);
+    arrow.quaternion.copy(arrowQ);
+    tiltGroup.add(arrow);
+
+    // Pulsing chevron rings along dip direction (animated, inside tiltGroup)
+    const chevrons = [];
+    for (let ci = 0; ci < chevCount; ci++) {
+      const chevR = 0.6 * arrowScale;
+      const chevGeo = new THREE.RingGeometry(chevR, chevR + 0.6 * arrowScale, 16, 1, 0, Math.PI);
+      const chevMat = new THREE.MeshBasicMaterial({
+        color: 0xff6633, transparent: true, opacity: 0.6, side: THREE.DoubleSide,
+      });
+      const chev = new THREE.Mesh(chevGeo, chevMat);
+      // Orient: face along dip direction
+      chev.quaternion.copy(arrowQ);
+      const rightAxis = new THREE.Vector3().crossVectors(arrowTarget, new THREE.Vector3(0, 1, 0)).normalize();
+      chev.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(rightAxis, -Math.PI / 2));
+      chev.position.set(0, 0.3, 0);
+      tiltGroup.add(chev);
+      chevrons.push(chev);
+    }
 
     // Centre marker sphere
-    const centreGeo = new THREE.SphereGeometry(1.2, 12, 8);
+    const centreGeo = new THREE.SphereGeometry(0.8 + intensity * 0.6, 12, 8);
     const centreMat = new THREE.MeshStandardMaterial({
       color: 0xffcc44, roughness: 0.3, emissive: 0x664400, emissiveIntensity: 0.4,
     });
     const centre = new THREE.Mesh(centreGeo, centreMat);
     group.add(centre);
 
-    // Angle label sprite (high-res canvas)
+    // Angle label sprite — now shows DipDir/Dip
     const canvas = document.createElement('canvas');
     canvas.width = 384; canvas.height = 192;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = 'rgba(30, 15, 0, 0.85)';
     ctx.fillRect(0, 0, 384, 192);
-    ctx.strokeStyle = '#ffaa44';
+    ctx.strokeStyle = '#ff6633';
     ctx.lineWidth = 5;
     ctx.strokeRect(4, 4, 376, 184);
     ctx.fillStyle = '#ffdd88';
-    ctx.font = 'bold 80px Arial';
+    ctx.font = 'bold 72px Arial';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(`S: ${Math.round(strikeAngle)}\u00B0`, 192, 100);
+    ctx.fillText(`${Math.round(dipDirection)}\u00B0/${Math.round(dipAngle)}\u00B0`, 192, 100);
     const tex = new THREE.CanvasTexture(canvas);
     tex.anisotropy = 4;
     const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
@@ -1080,7 +1169,11 @@ export class SceneManager {
     sprite.scale.set(10, 5, 1);
     group.add(sprite);
 
-    group.userData = { type: 'strikeDip', markerId, disc, centre, centreMat, t0: performance.now() };
+    group.userData = {
+      type: 'strikeDip', markerId, disc, centre, centreMat,
+      chevrons, dipDirX, dipDirZ, dipLen, intensity,
+      t0: performance.now(),
+    };
     this._animatedMarkers.push(group);
     this.markersGroup.add(group);
     this._strikeDipMarkers.push(group);

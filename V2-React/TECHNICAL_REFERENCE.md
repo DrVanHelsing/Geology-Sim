@@ -1178,18 +1178,28 @@ function mergeBufferGeometries(geometries) {
 
 **File**: `src/tools/ToolManager.js`
 
-### Drill Core — Vertical Borehole Sampling
+### Drill Core — Inclined Borehole Sampling
 
 ```javascript
-function handleDrill(engine, x, z, store) {
+function handleDrill(engine, x, z, store, { inclination = 0, azimuth = 0, maxDepth = 100 }) {
   const surfaceH = engine.getTerrainHeightAt(x, z);
   const layers = [];
   let prevLayer = null;
 
-  // Sample every 0.5 m from surface to elevation 0
-  for (let depth = 0; depth <= surfaceH; depth += 0.5) {
-    const elevation = surfaceH - depth;
-    const layer = engine.getLayerAt(x, z, elevation);
+  // Compute inclined drill direction vector
+  const incRad = inclination * Math.PI / 180;
+  const azRad = azimuth * Math.PI / 180;
+  const dirX = Math.sin(incRad) * Math.sin(azRad);
+  const dirY = -Math.cos(incRad);  // downward
+  const dirZ = Math.sin(incRad) * Math.cos(azRad);
+
+  // Sample every 0.5 m along the inclined borehole vector
+  for (let depth = 0; depth <= maxDepth; depth += 0.5) {
+    const sampleX = x + dirX * depth;
+    const sampleZ = z + dirZ * depth;
+    const elevation = surfaceH + dirY * depth;
+    if (elevation < 0) break;
+    const layer = engine.getLayerAt(sampleX, sampleZ, elevation);
 
     if (!prevLayer || layer.name !== prevLayer.name) {
       if (prevLayer) prevLayer.toDepth = depth;
@@ -1212,7 +1222,9 @@ function handleDrill(engine, x, z, store) {
 
 **Why 0.5 m step**: Smaller steps increase computation but ensure thin layers (minimum 6 m blend zone) are not missed. At 0.5 m, even the thinnest layer will produce at least 12 samples, guaranteeing detection.
 
-### Strike & Dip — Bedding Orientation
+**Why inclined drilling**: Real exploration boreholes are rarely vertical. Geologists choose inclination and azimuth to intersect target structures at optimal angles. The inclined borehole vector `(sin(inc)*sin(az), -cos(inc), sin(inc)*cos(az))` samples the deformed layer structure along the drill path, producing different stratigraphic intercepts than a vertical hole at the same collar position. The 3D rig marker tilts via a pivot group with `rotation.order = 'YXZ'`, `rotation.y = azRad`, `rotation.x = incRad`.
+
+### Dip Direction / Dip — Bedding Orientation
 
 ```javascript
 function handleStrikeDip(engine, x, z, store) {
@@ -1235,7 +1247,30 @@ function handleStrikeDip(engine, x, z, store) {
 }
 ```
 
+**Why Dip Direction / Dip notation**: The original Strike & Dip notation requires applying the right-hand rule to determine which side of the strike line the bed dips toward — a common source of confusion for students. Dip Direction / Dip notation states the dip direction explicitly (as a compass bearing), eliminating ambiguity. The dip direction azimuth is strike + 90°.
+
 **Why central-difference gradient**: The bedding perturbation function is a sum of sin() and noise() — its gradient could be computed analytically, but central differences provide a unified approach that also accounts for fault offset and any future deformation additions without requiring per-function derivative code.
+
+#### 3D Marker — Bedding Plane Tilt and Intensity Scaling
+
+The dip direction/dip marker uses a **tilt group** to orient the bedding plane disc to match the actual geological attitude:
+
+```javascript
+// Strike axis: perpendicular to dip direction in the XZ plane
+const strikeAxis = new THREE.Vector3(-dipDirZ, 0, dipDirX).normalize();
+// Tilt the bedding plane disc by the dip angle around the strike axis
+tiltGroup.quaternion.setFromAxisAngle(strikeAxis, -dipRad);
+```
+
+The tilt group contains the semi-transparent bedding plane disc, the bold red dip-direction arrow with cone tip, and the pulsing chevron half-rings. The **strike line and endpoint spheres remain outside the tilt group** (added to the parent group), since strike is by definition horizontal. Centre sphere and label sprite also stay upright.
+
+**Intensity scaling by dip angle**: All visual properties scale with `intensity = 0.3 + min(dipAngle/45, 1) * 0.7`:
+- Disc radius: 5–12, strike length: 8–18, dip arrow length: 6–16
+- Chevron count: 1 (gentle dip) to 3 (steep dip)
+- Arrow scale: 0.5–1.2, centre sphere radius: 0.8–1.4
+- Animation speed, disc pulse opacity, chevron fade rate, and glow intensity all increase with steeper dip
+
+This makes steep dips visually prominent and gentle dips subtle, matching the geological significance of each measurement.
 
 ### Cross-Section — Subsurface Profile
 
@@ -1295,7 +1330,55 @@ const beaconGeo = new THREE.SphereGeometry(0.8, 12, 12);
 // Tripod legs (3×)
 const legGeo = new THREE.CylinderGeometry(0.15, 0.15, 14, 6);
 // Positioned at ±120° angles, leaning outward
+
+// Pivot group for drill orientation
+const pivot = new THREE.Group();
+pivot.rotation.order = 'YXZ';
+pivot.rotation.y = azRad;    // azimuth (CW from north)
+pivot.rotation.x = incRad;   // inclination (from vertical)
+// Shaft, collar, bit, beacon, legs go inside pivot
+// Ground ring and glow disc stay in main group (flat on terrain)
 ```
+
+### Dip Direction / Dip Marker Components
+
+```javascript
+// Tilt group — rotates disc + dip arrow + chevrons to match bedding plane
+const tiltGroup = new THREE.Group();
+const strikeAxis = new THREE.Vector3(-dipDirZ, 0, dipDirX).normalize();
+tiltGroup.quaternion.setFromAxisAngle(strikeAxis, -dipRad);
+
+// Semi-transparent bedding plane disc (inside tiltGroup)
+const disc = new THREE.Mesh(
+  new THREE.CircleGeometry(discRadius, 64).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0xffa500, transparent: true, opacity: 0.15 })
+);
+tiltGroup.add(disc);
+
+// Bold red dip-direction arrow + cone tip (inside tiltGroup)
+const arrowQ = new THREE.Quaternion().setFromUnitVectors(
+  new THREE.Vector3(0, 1, 0), new THREE.Vector3(dipDirX, 0, dipDirZ).normalize()
+);
+// Pulsing chevron half-rings (1–3 based on dip angle, inside tiltGroup)
+
+// Strike line + endpoint spheres (in main group — stays horizontal)
+// Centre sphere + label sprite (in main group — stays upright)
+```
+
+### Terrain-Aligned Hover Marker
+
+```javascript
+// On mousemove raycast:
+if (hit.face) {
+  const normal = hit.face.normal.clone()
+    .transformDirection(this.terrain.matrixWorld).normalize();
+  this.hoverMarker.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0), normal
+  );
+}
+```
+
+The blue double-ring hover cursor uses the terrain face normal to orient itself parallel to the local surface. This provides instant visual feedback of terrain slope before any tool click.
 
 ### Animation Loop
 
@@ -1321,10 +1404,21 @@ _animateMarkers(time) {
     m.pillar.material.opacity = 0.12 + Math.sin(time * 1.5) * 0.04;
   });
 
-  // Strike-dip: disc opacity, centre sphere emissive
+  // Strike-dip: disc opacity pulse (intensity-driven), centre sphere emissive,
+  //   chevron phase/fade/scale animation along tilted dip direction
   this.strikeDipMarkers.forEach(m => {
-    m.disc.material.opacity = 0.3 + Math.sin(time * 1.5) * 0.1;
-    m.centre.material.emissiveIntensity = 0.4 + Math.sin(time * 2.5) * 0.3;
+    const inten = m.intensity || 1;
+    m.disc.material.opacity = 0.06 + inten * 0.08 + Math.sin(time * (1.5 + inten)) * 0.04 * inten;
+    m.centre.material.emissiveIntensity = 0.15 + inten * 0.15 + Math.sin(time * (2 + inten * 2)) * 0.25 * inten;
+    // Chevrons pulse along local dip direction (inside tilt group)
+    const speed = 1.0 + inten * 1.2;
+    for (const chev of m.chevrons) {
+      const phase = (time * speed + ci * 0.9) % span;
+      chev.position.x = m.dipDirX * m.dipLen * t;
+      chev.position.z = m.dipDirZ * m.dipLen * t;
+      chev.material.opacity = fade * 0.5 * inten + fade * 0.2;
+      chev.scale.setScalar((0.8 + t * 0.6) * (0.6 + inten * 0.4));
+    }
   });
 }
 ```
@@ -1379,6 +1473,12 @@ export const useStore = create(subscribeWithSelector((set, get) => ({
   settings: { waterLevel: 38, fogDensity: 0.0012, sunElevation: 45 },
   updateSetting: (key, value) => set(state => ({
     settings: { ...state.settings, [key]: value }
+  })),
+
+  // Drill settings (user-configurable borehole orientation)
+  drillSettings: { inclination: 0, azimuth: 0, maxDepth: 100 },
+  setDrillSettings: (s) => set(state => ({
+    drillSettings: { ...state.drillSettings, ...s }
   })),
 
   // Loading state

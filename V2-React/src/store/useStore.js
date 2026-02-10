@@ -57,6 +57,11 @@ const useStore = create(
     })),
     clearDrillMarkers: () => set({ drillMarkers: [] }),
 
+    // ── Drill borehole settings (inclination / azimuth / depth) ──
+    drillSettings: { inclination: 0, azimuth: 0, maxDepth: 100 },
+    setDrillSettings: (patch) =>
+      set((s) => ({ drillSettings: { ...s.drillSettings, ...patch } })),
+
     // ── Measure result (latest + persistent collection) ──
     measureResult: null,
     setMeasureResult: (result) => set({ measureResult: result }),

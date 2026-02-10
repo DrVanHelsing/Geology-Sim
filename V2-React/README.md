@@ -86,12 +86,13 @@ The application runs on commodity hardware (tested on Intel Iris Xe / i5 11th-ge
 
 ### Tools
 1. **Rock Identifier (2)**: Click terrain to identify the geological layer — shows name, minerals, grain size, texture, fossils, age, and characteristics in a popup
-2. **Drill Core (3)**: Virtual borehole sampling — animated tripod rig marker with rotating collar, pulsing ground ring, and beacon; panel shows a visual core column with depth axis, colour-coded layer segments, and log entries
+2. **Drill Core (3)**: Virtual borehole sampling with configurable **inclination** (0–90°), **azimuth** (0–360°), and **max depth** — samples along an inclined borehole vector rather than vertical-only. Animated tripod rig marker with rotating collar, pulsing ground ring, and beacon; rig tilts via a pivot group to match drill orientation. Panel shows drill settings bar (3 numeric inputs), borehole compass SVG, visual core column with depth axis, colour-coded layer segments, and log entries
 3. **Measure (4)**: Two-click distance/elevation measurement — glowing sphere markers on pins, curved dashed connecting line, label sprite showing 3D distance and elevation difference; panel shows horizontal distance, bearing, and slope angle
-4. **Strike & Dip (5)**: Bedding orientation measurement — bedding plane disc, bold strike/dip lines with endpoint spheres, angle label; panel shows strike, dip, dip direction with SVG stereonet visualisation and compass symbol
+4. **Dip Direction / Dip (5)**: Bedding orientation measurement using **Dip Direction / Dip notation** (avoids right-hand-rule ambiguity). The 3D marker features a semi-transparent **bedding plane disc that tilts to match the actual bedding plane orientation** (rotated around the strike axis by the dip angle), a bold red **dip-direction arrow** with cone tip, **pulsing chevron half-rings** that animate along the tilted dip direction, and a horizontal **strike line** (stays flat by definition). Marker size, chevron count (1–3), arrow scale, and animation intensity all **scale with dip angle** — steeper dips produce larger, more energetic markers. Panel shows dip direction, dip angle, strike, with SVG Wulff net stereonet, 3D sphere visualisation, and compass symbol
 5. **Cross-Section (6)**: Two-point geological profile — glowing pillar markers with numbered labels, terrain-following dashed line; panel renders a large canvas cross-section with layer colours, rock-type hatching patterns, water level indicator, surface profile, grid axes, and layer legend
 
 ### UI
+- **Terrain-aligned hover cursor**: Blue double-ring hover indicator automatically orients parallel to the terrain surface normal — tilts on slopes, cliffs, and ridges to give instant visual feedback of local surface orientation
 - **Dark-themed** interface styled after GitHub's design language
 - **Sidebar** with tool and panel toggle buttons, custom SVG icon animations
 - **Slide-out panel** with pin/unpin, backdrop click-away dismiss, Escape key close
@@ -339,13 +340,13 @@ All vegetation types use `THREE.InstancedMesh` with per-instance colour via `set
 Click any point to view the geological layer at that location. The layer is determined by elevation adjusted for bedding perturbation and fault offset.
 
 ### Drill Core
-Samples a vertical borehole from surface to elevation 0 in 0.5 m steps. Each step queries the deformed layer structure. The panel displays a visual core column, depth axis, and detailed log entries. A 3D marker (tripod rig with rotating collar) is placed at the drill site.
+Samples an inclined borehole from surface downward, with user-configurable inclination (0–90° from vertical), azimuth (0–360° bearing), and maximum depth. The borehole vector follows the chosen orientation, sampling the deformed layer structure every 0.5 m along the drill path. The panel displays a drill settings bar (inclination, azimuth, depth inputs), a borehole compass SVG showing drill direction, a visual core column, depth axis, and detailed log entries. A 3D marker (tripod rig with rotating collar) is placed at the drill site; the rig tilts via a Y/X pivot group to match the configured drill inclination and azimuth.
 
 ### Measure
 Two-click measurement computing: 3D distance, horizontal distance, elevation change, bearing (azimuth from North), and slope angle. Markers are glowing spheres on pins connected by a curved dashed line with a distance/elevation label sprite.
 
-### Strike & Dip
-Central-difference gradient of the bedding perturbation surface at the clicked point yields dip magnitude and direction. Strike is 90° counterclockwise from dip. The panel includes an SVG stereonet overview for multiple measurements and per-measurement compass symbols.
+### Dip Direction / Dip
+Central-difference gradient of the bedding perturbation surface at the clicked point yields dip magnitude and direction. Uses **Dip Direction / Dip notation** (dip direction stated first, followed by dip angle) to avoid right-hand-rule confusion. The 3D marker features a bedding plane disc that **tilts to match the actual bedding orientation** (rotated around the strike axis by the dip angle), a bold red dip-direction arrow with cone tip, pulsing chevron half-rings along the tilted dip direction, and a horizontal strike line. Marker size, animation speed, and chevron count **scale with dip angle** — steeper dips are visually more prominent. The panel includes an SVG Wulff net stereonet overview for multiple measurements, a 3D sphere projection view, and per-measurement compass symbols.
 
 ### Cross-Section
 Two-point line sampled at 200 intervals. For each sample, the surface elevation and all subsurface layers are traced. The panel renders a 720 × 420 px canvas with:
@@ -391,7 +392,7 @@ Two-point line sampled at 200 intervals. For each sample, the surface elevation 
 | `2` | Identify Rock |
 | `3` | Drill Core |
 | `4` | Measure |
-| `5` | Strike & Dip |
+| `5` | Dip Dir / Dip |
 | `6` | Cross-Section |
 | `L` | Toggle Layer Legend |
 | `N` | Toggle Field Notebook |

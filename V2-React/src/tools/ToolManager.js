@@ -16,21 +16,34 @@ export function handleIdentify(engine, point) {
 }
 
 /**
- * Drill: sample a vertical borehole through all layers.
- * Places a marker on the terrain and returns layer segments.
+ * Drill: sample a borehole through all layers along a given
+ * inclination, azimuth, and max depth.
+ * inclination: degrees from vertical (0 = straight down, 90 = horizontal)
+ * azimuth:     compass bearing of the borehole direction (degrees CW from N)
+ * maxDepth:    maximum down-hole distance to sample (metres)
  */
-export function handleDrill(engine, point) {
+export function handleDrill(engine, point, { inclination = 0, azimuth = 0, maxDepth = 100 } = {}) {
   const surfaceY = point.y;
   const results  = [];
   const step     = 0.5;
   let depth      = 0;
   const id       = nextId('drill');
 
-  while (true) {
-    const elev = surfaceY - depth;
-    if (elev < 0) break;
+  // Borehole direction vector (geographic: N = +Z, E = +X, down = -Y)
+  const incRad = inclination * Math.PI / 180;
+  const azRad  = azimuth * Math.PI / 180;
+  const dirX   =  Math.sin(azRad) * Math.sin(incRad);  // east component
+  const dirY   = -Math.cos(incRad);                     // vertical (down)
+  const dirZ   =  Math.cos(azRad) * Math.sin(incRad);  // north component
 
-    const layer = engine.getLayerAt(point.x, elev, point.z);
+  while (depth <= maxDepth) {
+    const sampleX = point.x + dirX * depth;
+    const sampleY = surfaceY + dirY * depth;
+    const sampleZ = point.z + dirZ * depth;
+
+    if (sampleY < 0) break;  // below world floor
+
+    const layer = engine.getLayerAt(sampleX, sampleY, sampleZ);
 
     if (results.length === 0 || results[results.length - 1].layer.name !== layer.name) {
       results.push({ layer, startDepth: depth, endDepth: depth });
@@ -40,13 +53,16 @@ export function handleDrill(engine, point) {
     depth += step;
   }
 
-  engine.addDrillMarker(point, id);
+  engine.addDrillMarker(point, id, { inclination, azimuth });
 
   return {
     id,
     results,
     position: { x: point.x, y: point.y, z: point.z },
     surfaceY,
+    inclination,
+    azimuth,
+    maxDepth,
     timestamp: Date.now(),
   };
 }
@@ -114,7 +130,7 @@ export function handleStrikeDip(engine, point) {
 
   const layer = engine.getLayerAt(point.x, point.y, point.z);
   const id = nextId('sd');
-  engine.addStrikeDipMarker(point, strike, id);
+  engine.addStrikeDipMarker(point, strike, id, dipDirection, dipAngle);
 
   return {
     id,

@@ -52,7 +52,9 @@ export default function useSceneEngine(containerRef) {
           break;
         }
         case 'drill': {
-          const result = handleDrill(engine, point);
+          const s2 = useStore.getState();
+          const opts = s2.drillSettings || {};
+          const result = handleDrill(engine, point, opts);
           s.setDrillResult(result);
           s.addDrillMarker(result);      // persist
           s.openPanel('drill');
