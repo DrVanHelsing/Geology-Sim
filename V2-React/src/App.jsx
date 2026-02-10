@@ -5,6 +5,7 @@ import useKeyboardShortcuts from './hooks/useKeyboardShortcuts';
 import Viewport from './components/Viewport';
 import Sidebar from './components/Sidebar';
 import Panel from './components/Panel';
+import HelpModal from './components/HelpModal';
 import StatusBar from './components/StatusBar';
 import Compass from './components/Compass';
 import HUD from './components/HUD';
@@ -23,6 +24,7 @@ export default function App() {
       <LoadingScreen />
       <Sidebar />
       <Panel />
+      <HelpModal />
       <StatusBar />
       <Compass />
       <HUD />

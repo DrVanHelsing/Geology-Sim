@@ -158,6 +158,15 @@ export function createVegetation(hm, noise) {
   addRiparianVegetation(group, getH, noise, scatter);
   addGrass(group, getH, noise, scatter);
 
+  // Expose windmill blades for animation
+  group.userData.windmillBlades = group.userData.windmillBlades || null;
+  // Search children for the farm compound windmill reference
+  group.traverse((child) => {
+    if (child.userData?.windmillBlades) {
+      group.userData.windmillBlades = child.userData.windmillBlades;
+    }
+  });
+
   return group;
 }
 
@@ -678,41 +687,150 @@ function addFarmCompound(group, getH) {
     }
   }
 
-  /* ── Crop fields ─── */
+  /* ── Crop fields (realistic with furrows, ridges and varied crops) ─── */
   const fieldDefs = [
-    { lx: -55, lz: -15, w: 32, d: 28, col: 0x5a8c30 },
-    { lx: -55, lz:  22, w: 28, d: 22, col: 0x8a9a30 },
-    { lx:  10, lz: -55, w: 36, d: 22, col: 0x6b9e38 },
-    { lx:  10, lz:  52, w: 30, d: 18, col: 0xa0903a },
+    { lx: -55, lz: -15, w: 32, d: 28, crop: 'wheat',   soilCol: 0x5e4a30, cropCol: 0xc8b040, cropH: 1.1 },
+    { lx: -55, lz:  22, w: 28, d: 22, crop: 'barley',   soilCol: 0x604830, cropCol: 0xa0982a, cropH: 0.9 },
+    { lx:  10, lz: -55, w: 36, d: 22, crop: 'corn',     soilCol: 0x564428, cropCol: 0x4a8830, cropH: 1.8 },
+    { lx:  10, lz:  52, w: 30, d: 18, crop: 'hay',      soilCol: 0x6a5535, cropCol: 0x88a030, cropH: 0.5 },
   ];
+
+  const furrowMat = new THREE.MeshStandardMaterial({ color: 0x4a3820, roughness: 0.95 });
+
   for (const f of fieldDefs) {
     const fp = local(f.lx, f.lz);
     const fh = getH(fp.x, fp.z);
-    const fGeo = new THREE.PlaneGeometry(f.w, f.d);
-    fGeo.rotateX(-Math.PI / 2);
-    const fMat = new THREE.MeshStandardMaterial({
-      color: f.col, roughness: 0.92, side: THREE.DoubleSide,
-    });
-    const fMesh = new THREE.Mesh(fGeo, fMat);
-    fMesh.position.set(fp.x, fh + 0.12, fp.z);
-    fMesh.rotation.y = angle;
-    fMesh.receiveShadow = true;
-    group.add(fMesh);
 
-    // Crop rows
-    const rowMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(f.col).multiplyScalar(0.75), roughness: 0.88,
+    // Tilled soil base
+    const soilGeo = new THREE.PlaneGeometry(f.w, f.d);
+    soilGeo.rotateX(-Math.PI / 2);
+    const soilMat = new THREE.MeshStandardMaterial({
+      color: f.soilCol, roughness: 0.95, side: THREE.DoubleSide,
     });
-    const rowGeo = new THREE.BoxGeometry(f.w * 0.88, 0.6, 0.35);
-    const numRows = Math.floor(f.d / 2.8);
+    const soilMesh = new THREE.Mesh(soilGeo, soilMat);
+    soilMesh.position.set(fp.x, fh + 0.05, fp.z);
+    soilMesh.rotation.y = angle;
+    soilMesh.receiveShadow = true;
+    group.add(soilMesh);
+
+    // Field border — slight raised earth rim
+    const borderGeo = new THREE.BoxGeometry(f.w + 1.2, 0.35, f.d + 1.2);
+    const borderMat = new THREE.MeshStandardMaterial({ color: 0x5a4a30, roughness: 0.92 });
+    const borderMesh = new THREE.Mesh(borderGeo, borderMat);
+    borderMesh.position.set(fp.x, fh + 0.15, fp.z);
+    borderMesh.rotation.y = angle;
+    borderMesh.receiveShadow = true;
+    group.add(borderMesh);
+
+    // Row parameters
+    const rowSpacing = f.crop === 'corn' ? 2.4 : 1.6;
+    const numRows = Math.floor((f.d - 2) / rowSpacing);
+    const cropColor = new THREE.Color(f.cropCol);
+
     for (let r = 0; r < numRows; r++) {
-      const rlz = f.lz - f.d / 2 + (r + 0.5) * (f.d / numRows);
+      const rlz = f.lz - f.d / 2 + 1 + (r + 0.5) * ((f.d - 2) / numRows);
       const rp = local(f.lx, rlz);
       const rh = getH(rp.x, rp.z);
-      const rm = new THREE.Mesh(rowGeo, rowMat);
-      rm.position.set(rp.x, rh + 0.42, rp.z);
-      rm.rotation.y = angle;
-      group.add(rm);
+
+      // Raised ridge (soil mound for each row)
+      const ridgeGeo = new THREE.BoxGeometry(f.w * 0.90, 0.22, rowSpacing * 0.45);
+      const ridgeMesh = new THREE.Mesh(ridgeGeo, furrowMat);
+      ridgeMesh.position.set(rp.x, rh + 0.22, rp.z);
+      ridgeMesh.rotation.y = angle;
+      ridgeMesh.receiveShadow = true;
+      group.add(ridgeMesh);
+
+      // Crop plants per row — instanced along the row
+      const plantCount = Math.floor(f.w / 1.2);
+      for (let p = 0; p < plantCount; p++) {
+        const plx = f.lx - f.w / 2 + 0.8 + p * ((f.w - 1.6) / plantCount);
+        const pp = local(plx, rlz + (Math.random() - 0.5) * 0.3);
+        const ph = getH(pp.x, pp.z);
+        const jitter = 0.85 + Math.random() * 0.3;
+
+        if (f.crop === 'wheat' || f.crop === 'barley') {
+          // Wheat/barley: thin vertical stalk + small head
+          const stalkH = f.cropH * jitter;
+          const stalkGeo = new THREE.CylinderGeometry(0.03, 0.04, stalkH, 4);
+          const stalkMat = new THREE.MeshStandardMaterial({
+            color: cropColor.clone().multiplyScalar(0.7 + Math.random() * 0.2),
+            roughness: 0.85,
+          });
+          const stalk = new THREE.Mesh(stalkGeo, stalkMat);
+          stalk.position.set(pp.x, ph + 0.22 + stalkH / 2, pp.z);
+          stalk.rotation.y = Math.random() * 0.3;
+          stalk.rotation.z = (Math.random() - 0.5) * 0.08; // slight lean
+          group.add(stalk);
+
+          // Grain head at top
+          const headGeo = new THREE.CylinderGeometry(0.06, 0.04, stalkH * 0.22, 4);
+          const headMat = new THREE.MeshStandardMaterial({
+            color: f.crop === 'wheat' ? 0xd4b840 : 0xb8a838,
+            roughness: 0.8,
+          });
+          const head = new THREE.Mesh(headGeo, headMat);
+          head.position.set(pp.x, ph + 0.22 + stalkH + stalkH * 0.11, pp.z);
+          head.rotation.z = (Math.random() - 0.5) * 0.15;
+          group.add(head);
+        } else if (f.crop === 'corn') {
+          // Corn: thick stalk + leaf planes
+          const stalkH = f.cropH * jitter;
+          const stalkGeo = new THREE.CylinderGeometry(0.06, 0.08, stalkH, 5);
+          const stalkMat = new THREE.MeshStandardMaterial({
+            color: 0x3a6e20, roughness: 0.82,
+          });
+          const stalk = new THREE.Mesh(stalkGeo, stalkMat);
+          stalk.position.set(pp.x, ph + 0.22 + stalkH / 2, pp.z);
+          group.add(stalk);
+
+          // 2-3 leaves per stalk
+          const leafMat = new THREE.MeshStandardMaterial({
+            color: cropColor.clone().multiplyScalar(0.8 + Math.random() * 0.3),
+            roughness: 0.8, side: THREE.DoubleSide,
+          });
+          const leafCount = 2 + Math.floor(Math.random() * 2);
+          for (let l = 0; l < leafCount; l++) {
+            const leafGeo = new THREE.PlaneGeometry(0.8, 0.12);
+            const leaf = new THREE.Mesh(leafGeo, leafMat);
+            const leafY = ph + 0.22 + stalkH * (0.35 + l * 0.2);
+            const leafAngle = Math.random() * Math.PI * 2;
+            leaf.position.set(
+              pp.x + Math.cos(leafAngle) * 0.35,
+              leafY,
+              pp.z + Math.sin(leafAngle) * 0.35,
+            );
+            leaf.rotation.y = leafAngle;
+            leaf.rotation.z = 0.5 + Math.random() * 0.3; // droop
+            group.add(leaf);
+          }
+        } else {
+          // Hay/generic: low bushy tufts
+          const tH = f.cropH * jitter;
+          const tGeo = new THREE.SphereGeometry(0.3, 5, 3);
+          tGeo.scale(1, tH / 0.3, 1);
+          const tMat = new THREE.MeshStandardMaterial({
+            color: cropColor.clone().multiplyScalar(0.75 + Math.random() * 0.25),
+            roughness: 0.9,
+          });
+          const t = new THREE.Mesh(tGeo, tMat);
+          t.position.set(pp.x, ph + 0.22 + tH * 0.5, pp.z);
+          group.add(t);
+        }
+      }
+    }
+
+    // Headland paths (bare soil strips at field ends)
+    for (const endOff of [-f.d / 2 - 0.3, f.d / 2 + 0.3]) {
+      const hp = local(f.lx, f.lz + endOff);
+      const hh = getH(hp.x, hp.z);
+      const hpGeo = new THREE.PlaneGeometry(f.w + 1, 1.5);
+      hpGeo.rotateX(-Math.PI / 2);
+      const hpMat = new THREE.MeshStandardMaterial({ color: 0x8a7a5a, roughness: 0.95 });
+      const hpMesh = new THREE.Mesh(hpGeo, hpMat);
+      hpMesh.position.set(hp.x, hh + 0.08, hp.z);
+      hpMesh.rotation.y = angle;
+      hpMesh.receiveShadow = true;
+      group.add(hpMesh);
     }
   }
 
@@ -738,36 +856,115 @@ function addFarmCompound(group, getH) {
   /* ── Windmill ─── */
   const wmP = local(-42, -30);
   const wmH = getH(wmP.x, wmP.z);
-  // Tower
-  const wmTowerGeo = new THREE.CylinderGeometry(1.5, 2.5, 16, 8);
-  const wmTowerMat = new THREE.MeshStandardMaterial({ color: 0xc8c0b0, roughness: 0.8 });
+  // Tower — tapered stone/brick cylinder
+  const wmTowerGeo = new THREE.CylinderGeometry(1.5, 2.8, 18, 12);
+  const wmTowerMat = new THREE.MeshStandardMaterial({ color: 0xc8c0b0, roughness: 0.82 });
   const wmTower = new THREE.Mesh(wmTowerGeo, wmTowerMat);
-  wmTower.position.set(wmP.x, wmH + 8, wmP.z);
+  wmTower.position.set(wmP.x, wmH + 9, wmP.z);
   wmTower.castShadow = true;
   group.add(wmTower);
-  // Cap
-  const wmCapGeo = new THREE.ConeGeometry(2.2, 3, 8);
+
+  // Observation deck ring at top of tower
+  const wmDeckGeo = new THREE.CylinderGeometry(2.6, 2.6, 0.4, 12);
+  const wmDeckMat = new THREE.MeshStandardMaterial({ color: 0x7a6a5a, roughness: 0.85 });
+  const wmDeck = new THREE.Mesh(wmDeckGeo, wmDeckMat);
+  wmDeck.position.set(wmP.x, wmH + 18.2, wmP.z);
+  group.add(wmDeck);
+
+  // Cap — conical roof
+  const wmCapGeo = new THREE.ConeGeometry(2.5, 3.5, 12);
   const wmCapMat = new THREE.MeshStandardMaterial({ color: 0x5a4a3a, roughness: 0.85 });
   const wmCap = new THREE.Mesh(wmCapGeo, wmCapMat);
-  wmCap.position.set(wmP.x, wmH + 17.5, wmP.z);
+  wmCap.position.set(wmP.x, wmH + 20.2, wmP.z);
   wmCap.castShadow = true;
   group.add(wmCap);
-  // Blades (4 flat planes)
-  const bladeMat = new THREE.MeshStandardMaterial({ color: 0xd0c8b8, roughness: 0.7, side: THREE.DoubleSide });
+
+  // ── Blade assembly (hub + 4 proper blades) — rotates as a unit ──
+  const bladeAssembly = new THREE.Group();
+  // Position at front of cap
+  const hubOffX = Math.cos(angle) * 2.6;
+  const hubOffZ = Math.sin(angle) * 2.6;
+  bladeAssembly.position.set(wmP.x + hubOffX, wmH + 19.0, wmP.z + hubOffZ);
+  // The assembly rotates around the axis pointing outward from the tower face
+  // We set the rotation axis via the group's orientation
+  bladeAssembly.rotation.y = angle;
+
+  // Hub — central boss where blades meet
+  const hubGeo = new THREE.CylinderGeometry(0.7, 0.7, 1.2, 12);
+  hubGeo.rotateX(Math.PI / 2); // orient along Z (forward-facing)
+  const hubMat = new THREE.MeshStandardMaterial({ color: 0x4a4035, roughness: 0.6, metalness: 0.2 });
+  bladeAssembly.add(new THREE.Mesh(hubGeo, hubMat));
+
+  // Hub cap (front dome)
+  const hubCapGeo = new THREE.SphereGeometry(0.75, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+  hubCapGeo.rotateX(Math.PI / 2);
+  const hubCap = new THREE.Mesh(hubCapGeo, new THREE.MeshStandardMaterial({ color: 0x3a3530, roughness: 0.5, metalness: 0.3 }));
+  hubCap.position.z = 0.6;
+  bladeAssembly.add(hubCap);
+
+  // Build 4 proper blades — each has a sail frame (leading spar + lattice) and linen sail
+  const bladeMat = new THREE.MeshStandardMaterial({ color: 0xd8d0c0, roughness: 0.75, side: THREE.DoubleSide });
+  const sparMat = new THREE.MeshStandardMaterial({ color: 0x6b5030, roughness: 0.9 });
+
   for (let bi = 0; bi < 4; bi++) {
-    const bGeo = new THREE.PlaneGeometry(1.5, 10);
-    const bMesh = new THREE.Mesh(bGeo, bladeMat);
+    const bladeGroup = new THREE.Group();
     const ba = (bi / 4) * Math.PI * 2;
-    bMesh.position.set(
-      wmP.x + Math.cos(angle) * 0.5,
-      wmH + 16 + Math.sin(ba) * 5,
-      wmP.z + Math.sin(angle) * 0.5 + Math.cos(ba) * 5,
-    );
-    bMesh.rotation.x = ba;
-    bMesh.rotation.y = angle;
-    bMesh.castShadow = true;
-    group.add(bMesh);
+    bladeGroup.rotation.z = ba;
+
+    // Main spar (backbone of blade) — extends radially outward
+    const sparLen = 9.5;
+    const sparGeo = new THREE.BoxGeometry(0.25, sparLen, 0.15);
+    const spar = new THREE.Mesh(sparGeo, sparMat);
+    spar.position.y = sparLen / 2 + 0.7;
+    spar.castShadow = true;
+    bladeGroup.add(spar);
+
+    // Sail (trapezoidal shape via custom geometry)
+    // Wider at hub end, narrower at tip — realistic windmill sail
+    const sailShape = new THREE.Shape();
+    const sailBaseW = 2.2;  // width at root
+    const sailTipW = 0.7;   // width at tip
+    const sailLen = 8.5;
+    sailShape.moveTo(0.15, 1.0);                         // root leading edge
+    sailShape.lineTo(0.15 + sailBaseW, 1.0);             // root trailing edge
+    sailShape.lineTo(0.15 + sailTipW * 0.7, 1.0 + sailLen); // tip trailing edge
+    sailShape.lineTo(0.15, 1.0 + sailLen);               // tip leading edge
+    sailShape.closePath();
+    const sailGeo = new THREE.ShapeGeometry(sailShape);
+    const sail = new THREE.Mesh(sailGeo, bladeMat);
+    sail.castShadow = true;
+    sail.receiveShadow = true;
+    bladeGroup.add(sail);
+
+    // Cross-battens on sail (3 horizontal bars)
+    for (let cb = 0; cb < 3; cb++) {
+      const t = (cb + 1) / 4;
+      const barY = 1.0 + sailLen * t;
+      const barW = sailBaseW * (1 - t) + sailTipW * 0.7 * t;
+      const barGeo = new THREE.BoxGeometry(barW, 0.08, 0.08);
+      const bar = new THREE.Mesh(barGeo, sparMat);
+      bar.position.set(0.15 + barW / 2, barY, 0.05);
+      bladeGroup.add(bar);
+    }
+
+    bladeAssembly.add(bladeGroup);
   }
+
+  bladeAssembly.castShadow = true;
+  group.add(bladeAssembly);
+
+  // Store reference so we can animate it
+  group.userData.windmillBlades = bladeAssembly;
+
+  // Tail vane (small fin on the back for orientation)
+  const vaneGeo = new THREE.BoxGeometry(0.1, 2.5, 4);
+  const vaneMat = new THREE.MeshStandardMaterial({ color: 0x6b5a4a, roughness: 0.85, side: THREE.DoubleSide });
+  const vane = new THREE.Mesh(vaneGeo, vaneMat);
+  const vaneOffX = -Math.cos(angle) * 3.5;
+  const vaneOffZ = -Math.sin(angle) * 3.5;
+  vane.position.set(wmP.x + vaneOffX, wmH + 19.5, wmP.z + vaneOffZ);
+  vane.rotation.y = angle;
+  group.add(vane);
 }
 
 /* =============================================================

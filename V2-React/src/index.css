@@ -804,3 +804,372 @@ textarea {
   display: inline-block;
   border: 1px solid rgba(255,255,255,0.1);
 }
+
+/* ================================================================
+   HELP MODAL  (full-screen overlay with tabbed content)
+   ================================================================ */
+
+/* ── overlay & container ─────────────────────────────────── */
+.hm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.60);
+  backdrop-filter: blur(6px);
+  animation: hmFadeIn 0.18s ease-out;
+}
+@keyframes hmFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.hm-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(900px, 92vw);
+  max-height: min(680px, 88vh);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.55);
+  overflow: hidden;
+  animation: hmSlideUp 0.22s ease-out;
+}
+@keyframes hmSlideUp {
+  from { opacity: 0; transform: translateY(18px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+/* ── header ──────────────────────────────────────────────── */
+.hm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.hm-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-1);
+  letter-spacing: -0.01em;
+}
+.hm-close {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 8px;
+  background: rgba(255,255,255,0.05);
+  color: var(--text-3);
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.hm-close:hover { background: rgba(255,80,80,0.18); color: #f66; }
+
+/* ── tabs ────────────────────────────────────────────────── */
+.hm-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255,255,255,0.015);
+}
+.hm-tab {
+  padding: 12px 18px;
+  border: none;
+  background: none;
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.hm-tab:hover { color: var(--text-2); }
+.hm-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* ── scrollable content area ─────────────────────────────── */
+.hm-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px 28px;
+}
+.hm-content::-webkit-scrollbar { width: 6px; }
+.hm-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+
+.hm-tab-body {
+  animation: hmContentFade 0.2s ease-out;
+}
+@keyframes hmContentFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* ── key cap ─────────────────────────────────────────────── */
+.hm-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 2px 0 rgba(0,0,0,0.3);
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.hm-key.wide { min-width: 56px; }
+
+/* ── key clusters (WASD / arrows) ────────────────────────── */
+.hm-key-cluster {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.hm-key-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.hm-or-divider {
+  font-size: 11px;
+  color: var(--text-3);
+  margin: 0 6px;
+}
+.hm-key-plus {
+  font-size: 13px;
+  color: var(--text-3);
+  margin: 0 4px;
+}
+.hm-key-label {
+  font-size: 12px;
+  color: var(--text-2);
+  font-style: italic;
+}
+
+/* ── mouse graphic ───────────────────────────────────────── */
+.hm-mouse {
+  flex-shrink: 0;
+}
+
+/* ── camera controls grid ────────────────────────────────── */
+.hm-control-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 14px;
+}
+.hm-control-card {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 16px 18px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.06);
+  transition: background 0.15s, border-color 0.15s;
+}
+.hm-control-card:hover {
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.1);
+}
+.hm-control-visual {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 60px;
+}
+.hm-control-visual.hm-control-keys {
+  min-width: 80px;
+  flex-direction: column;
+  gap: 4px;
+}
+.hm-control-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-1);
+  margin-bottom: 4px;
+}
+.hm-control-desc {
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.55;
+}
+
+/* ── tools grid ──────────────────────────────────────────── */
+.hm-tools-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.hm-tool-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 18px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.06);
+  transition: background 0.15s;
+}
+.hm-tool-card:hover { background: rgba(255,255,255,0.04); }
+.hm-tool-icon {
+  flex-shrink: 0;
+  width: 40px; height: 40px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(88, 166, 255, 0.08);
+  border: 1px solid rgba(88, 166, 255, 0.15);
+  border-radius: 10px;
+  color: var(--accent);
+}
+.hm-tool-icon svg { width: 22px; height: 22px; }
+.hm-tool-body { flex: 1; min-width: 0; }
+.hm-tool-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-1);
+  margin-bottom: 4px;
+}
+.hm-tool-desc {
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.55;
+}
+.hm-tool-real {
+  margin-top: 6px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(88, 166, 255, 0.04);
+  border-left: 3px solid rgba(88, 166, 255, 0.25);
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.5;
+}
+.hm-real-tag {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(88, 166, 255, 0.55);
+  margin-bottom: 2px;
+}
+
+/* ── shortcuts table ─────────────────────────────────────── */
+.hm-shortcut-table {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 28px;
+}
+.hm-shortcut-cat {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  padding: 12px 0 4px;
+}
+.hm-shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.02);
+}
+.hm-shortcut-row:hover { background: rgba(255,255,255,0.04); }
+.hm-shortcut-keys { min-width: 60px; display: flex; gap: 4px; }
+.hm-shortcut-action { font-size: 13px; color: var(--text-2); }
+
+/* ── panel cards ─────────────────────────────────────────── */
+.hm-panels-section { margin-top: 8px; }
+.hm-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-2);
+  margin-bottom: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.hm-panel-cards { display: flex; flex-direction: column; gap: 10px; }
+.hm-panel-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.hm-panel-card-icon {
+  flex-shrink: 0;
+  width: 36px; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0.04);
+  border-radius: 8px;
+  color: var(--text-2);
+}
+.hm-panel-card-icon svg { width: 20px; height: 20px; }
+.hm-panel-card-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+  margin-bottom: 3px;
+}
+.hm-panel-card-desc { font-size: 12px; color: var(--text-2); line-height: 1.5; }
+
+/* ── tips grid ───────────────────────────────────────────── */
+.hm-tips-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 12px;
+}
+.hm-tip-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.hm-tip-num {
+  flex-shrink: 0;
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: rgba(88, 166, 255, 0.1);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--mono);
+}
+.hm-tip-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+  margin-bottom: 3px;
+}
+.hm-tip-desc {
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.55;
+}

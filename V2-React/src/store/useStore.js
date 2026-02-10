@@ -84,6 +84,12 @@ const useStore = create(
     selectMarker: (marker) => set({ selectedMarker: marker }),
     clearSelectedMarker: () => set({ selectedMarker: null }),
 
+    // ── Help modal ────────────────────────────────
+    helpOpen: false,
+    openHelp:  () => set({ helpOpen: true }),
+    closeHelp: () => set({ helpOpen: false }),
+    toggleHelp: () => set((s) => ({ helpOpen: !s.helpOpen })),
+
     // ── Loading progress ─────────────────────────
     loadingProgress: 0,
     loadingMessage: 'Initializing…',

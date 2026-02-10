@@ -239,23 +239,39 @@ Screen-Space Ambient Occlusion darkens concavities where light would naturally b
 
 ## Water Systems — Hydrological Challenges
 
-### Ocean — Gerstner Waves
+### Ocean — Horizon-Scale Gerstner Waves
 
-Sinusoidal vertex displacement produces rounded, unrealistic waves. Gerstner waves model the circular orbital motion of water particles, creating trochoid wave profiles with sharp crests and broad troughs — a closer approximation to wind-driven ocean waves. Six waves with different directions, frequencies, and steepnesses are combined on a 300×300 vertex grid for visual complexity and fine-scale surface detail. Two high-frequency waves (w5, w6) were added to break up the periodicity visible with only four components.
+Sinusoidal vertex displacement produces rounded, unrealistic waves. Gerstner waves model the circular orbital motion of water particles, creating trochoid wave profiles with sharp crests and broad troughs — a closer approximation to wind-driven ocean waves. Six waves with different directions, frequencies, and steepnesses are combined on a 400×400 vertex grid for visual complexity and fine-scale surface detail. Two high-frequency waves (w5, w6) were added to break up the periodicity visible with only four components.
 
-All three water systems — ocean, lakes, and river — now share a triple specular model (high + medium + broad exponents) and multi-octave caustic noise for visual consistency across water bodies.
+The ocean plane was expanded from 3000 m (1.5× terrain) to **20 000 m (10× terrain)**, creating a horizon-scale body of water that surrounds the island on all sides and extends to the camera far plane. This produces the illusion that the terrain is an island in the middle of an open ocean. To prevent tiling artefacts at the edges of the enlarged geometry, **wave amplitude is attenuated** using a `smoothstep(8000, 2000, distFromCentre)` fade — waves are at full strength near the island but flatten to a glassy surface at the ocean's extremities. A **horizon-haze fog blend** mixes the distant ocean surface colour into an atmospheric horizon colour, hiding the geometric edge of the mesh.
+
+The fragment shader adds several physically-motivated effects: a **horizon-colour sky reflection** blended via `pow(1.0 - R.y, 3)` for grazing-angle reflections, a wide **sun-path shimmer** (`pow(dot(R, L), 16) * 0.35`) that paints a column of light across the water toward the camera, **deep-ocean darkening** (via `smoothstep(1500, 6000, dist)`) that shifts distant water to a deeper blue-black, and **distance-faded caustics** that disappear beyond 3000 m to avoid repetitive patterns on the open ocean.
+
+All three water systems — ocean, lakes, and river — now share a triple specular model (high + medium + broad exponents), multi-octave caustic noise, a unified **horizon colour** (`uHorizonColor`) that matches the atmospheric sky dome, and a **sun-path shimmer** term for visual consistency across water bodies. The camera's `maxDistance` was increased from 2500 to 4000 m so users can orbit out far enough to appreciate the island setting.
 
 ### Lake Water System — Gerstner Upgrade
 
 Lake surfaces were originally driven by three sinusoidal ripple components with analytical normals. This produced symmetrical, wave-pool-like motion. The system was upgraded to a 5-component Gerstner wave model with finite-difference normals (ε=0.5, cross-product of forward/backward samples). This produces physically correct trochoid ripple profiles — sharp crests and flat troughs — even at the small amplitudes appropriate for enclosed water bodies. Lake geometry uses 96-segment circles (up from 64) for smoother shoreline silhouettes. A `uShallowColor` uniform enables per-lake colour variation.
 
+The lake fragment shader was enhanced with **horizon-colour reflection blending** (matching the ocean), **sun-path shimmer** (`pow(dot(R, L), 16) * 0.25`) for a sun column effect, boosted SSS intensity (0.18 → 0.22) with warmer translucency colours, and increased diffuse contribution (0.12 → 0.14). These additions bring lake surfaces to visual parity with the ocean, so all standing water bodies share a consistent, physically-motivated appearance.
+
 ### Lake Water Level Determination
 
 Each lake's water level is not set arbitrarily but determined by sampling the terrain rim at 32 points around the lake periphery and taking the minimum. This ensures water sits at the natural "pour point" of the basin. The water surface is placed **1.8 m above** this minimum rim elevation (previously 0.3 m below), combined with deeper basin carving (16–24 m, up from 10–18 m). This change ensures lakes appear convincingly full, with water visibly lapping at the shoreline rather than sitting below the rim. The slight overshoot above the pour-point is visually acceptable because the terrain at the rim is irregular — the 1.8 m offset fills micro-depressions without creating visible overflow.
 
-### River — Enhanced Flow System
+### River — Visible Flowing Water
 
-The river shader was upgraded from 2-component to 4-component ripples, with two high-frequency waves (3.7× and 5.1× base frequency at decreasing amplitude) that break up the visible periodicity of the original system. Multi-octave flow-aligned caustics (two noise layers at different scales and scroll directions) replace the single-octave pattern. A subsurface scattering (SSS) approximation (`pow(dot(viewDir, -sunDir), 4) * 0.08`) adds translucent green-blue tint when viewing toward the sun, enhancing the perception of water depth.
+The river shader was upgraded from 2-component to **5-component ripples** (frequencies 12–40, amplitudes 0.08–0.02, speeds 2.5–5.5) scrolled along the river's UV.y axis at varying speeds, producing a clearly visible downstream flow direction. The 5th high-frequency component was added specifically to break up visible periodicity at close range.
+
+**Flow-aware normals**: The vertex shader now computes per-vertex flow normals via finite differences in UV-space. Neighbouring positions are sampled at ±ε along the flow (UV.y) and cross-stream (UV.x) directions, and the resulting tangent/bitangent cross product gives a geometrically accurate normal for the displaced surface. This replaced the analytical normal approximation used previously, which could not account for the complex multi-frequency displacement.
+
+**Edge foam**: A noise-driven foam pattern (`vnoise` function) is applied near the river banks (`UV.x < 0.15 || UV.x > 0.85`), simulating the turbulent white-water spray that forms where shallow water meets the channel edge. The foam scrolls downstream with the flow.
+
+**Flow streaks**: Thin bright lines (`sin(uv.x * 60.0 + uv.y * 8.0 - time * 3.0)`) are modulated by noise and masked to the centre of the channel, creating the visual effect of sunlit current threads moving downstream.
+
+**Caustics**: Upgraded from 2-octave to **3-octave** flow-aligned caustic noise, with each octave scrolling at a different speed and scale, producing a richer interference pattern that reinforces the sense of flowing water.
+
+SSS was enhanced (0.08 → 0.18 intensity, warmer translucency colours), and **horizon-colour reflection blending** plus **sun-path shimmer** were added for consistency with the ocean and lake water models.
 
 ### River Water Height
 

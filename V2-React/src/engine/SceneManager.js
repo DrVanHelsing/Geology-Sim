@@ -91,25 +91,27 @@ export class SceneManager {
 
     // Camera
     this.camera = new THREE.PerspectiveCamera(
-      60, container.clientWidth / container.clientHeight, 1, 20000,
+      55, container.clientWidth / container.clientHeight, 1, 25000,
     );
     this.camera.position.set(-400, 350, 700);
 
-    // Controls — full range of movement, terrain clamping in render loop
+    // Controls — smooth orbit camera
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping    = true;
-    this.controls.dampingFactor    = 0.08;
-    this.controls.maxDistance      = 5000;
-    this.controls.minDistance      = 5;
-    this.controls.maxPolarAngle    = Math.PI * 0.95;
-    this.controls.minPolarAngle    = 0.05;
+    this.controls.dampingFactor    = 0.18;       // higher = more fluid/responsive
+    this.controls.maxDistance      = 4000;
+    this.controls.minDistance      = 20;
+    this.controls.maxPolarAngle    = Math.PI * 0.48;  // ~88°
+    this.controls.minPolarAngle    = 0.09;             // ~5°
     this.controls.enablePan        = true;
-    this.controls.panSpeed         = 1.2;
-    this.controls.screenSpacePanning = true;   // pan moves target in screen plane
-    this.controls.keyPanSpeed      = 20;
+    this.controls.panSpeed         = 0.8;
+    this.controls.screenSpacePanning = true;
+    this.controls.keyPanSpeed      = 0;          // we handle keyboard ourselves
+    this.controls.rotateSpeed      = 0.4;
+    this.controls.zoomSpeed        = 1.2;        // scroll zoom only
     this.controls.mouseButtons     = {
       LEFT:   THREE.MOUSE.ROTATE,
-      MIDDLE: THREE.MOUSE.DOLLY,
+      MIDDLE: THREE.MOUSE.PAN,
       RIGHT:  THREE.MOUSE.PAN,
     };
     this.controls.touches = {
@@ -117,6 +119,13 @@ export class SceneManager {
       TWO: THREE.TOUCH.DOLLY_PAN,
     };
     this.controls.target.set(0, 80, 0);
+
+    // ── Keyboard state tracking for WASD/QE/+- camera ──
+    this._keys = {};
+    this._onKeyDown = (e) => { this._keys[e.code] = true; };
+    this._onKeyUp   = (e) => { this._keys[e.code] = false; };
+    window.addEventListener('keydown', this._onKeyDown);
+    window.addEventListener('keyup', this._onKeyUp);
 
     onProgress?.(5, 'Setting up lighting…');
     this._setupLighting();
@@ -241,7 +250,7 @@ export class SceneManager {
     const group = new THREE.Group();
 
     // Outer ring
-    const outerGeo = new THREE.RingGeometry(5, 7, 32);
+    const outerGeo = new THREE.RingGeometry(5, 7, 64);
     outerGeo.rotateX(-Math.PI / 2);
     const outerMat = new THREE.MeshBasicMaterial({
       color: 0x58a6ff, transparent: true, opacity: 0.45, side: THREE.DoubleSide,
@@ -250,7 +259,7 @@ export class SceneManager {
     group.add(outer);
 
     // Inner ring
-    const innerGeo = new THREE.RingGeometry(2, 3.5, 32);
+    const innerGeo = new THREE.RingGeometry(2, 3.5, 64);
     innerGeo.rotateX(-Math.PI / 2);
     const innerMat = new THREE.MeshBasicMaterial({
       color: 0x88ccff, transparent: true, opacity: 0.35, side: THREE.DoubleSide,
@@ -259,7 +268,7 @@ export class SceneManager {
     group.add(inner);
 
     // Centre dot
-    const dotGeo = new THREE.CircleGeometry(1, 16);
+    const dotGeo = new THREE.CircleGeometry(1, 32);
     dotGeo.rotateX(-Math.PI / 2);
     const dotMat = new THREE.MeshBasicMaterial({
       color: 0xaaddff, transparent: true, opacity: 0.5, side: THREE.DoubleSide,
@@ -340,25 +349,6 @@ export class SceneManager {
       if (hit) this._clickCbs.forEach((cb) => cb(hit.point));
     });
 
-    // ── Zoom-to-cursor: shift orbit target toward terrain point under mouse ──
-    // This runs BEFORE OrbitControls processes the wheel event so the
-    // dolly zoom moves toward wherever the user is pointing, not the
-    // old fixed center.
-    canvas.addEventListener('wheel', (e) => {
-      // Only shift target when zooming in (scrolling down / negative deltaY)
-      const zoomingIn = e.deltaY < 0;
-      // Raycast to find terrain point under cursor
-      const hit = this._raycastTerrain();
-      if (hit) {
-        const tgt = this.controls.target;
-        // Strength: move target more aggressively when zooming in,
-        // gently when zooming out (so you can back away smoothly)
-        const strength = zoomingIn ? 0.15 : 0.04;
-        tgt.x += (hit.point.x - tgt.x) * strength;
-        tgt.y += (hit.point.y - tgt.y) * strength;
-        tgt.z += (hit.point.z - tgt.z) * strength;
-      }
-    }, { passive: true });
   }
 
   _raycastTerrain() {
@@ -393,11 +383,22 @@ export class SceneManager {
   _animate() {
     if (this._disposed) return;
     this._animId = requestAnimationFrame(() => this._animate());
-    const t = this.clock.getElapsedTime();
+    const dt = this.clock.getDelta();
+    const t = this.clock.elapsedTime;
+
+    // ── WASD/QE/+- Keyboard camera movement (Unity-style) ──
+    this._handleKeyboardMovement(dt);
+
     this.controls.update();
 
     // ── Terrain-aware camera clamping ──
     this._clampCameraToTerrain();
+
+    // ── Windmill blade animation ──
+    if (this.vegetation?.userData?.windmillBlades) {
+      // Rotate the blade assembly around its local Z axis (faces outward)
+      this.vegetation.userData.windmillBlades.rotation.z = t * 0.8;
+    }
 
     // ── Underwater detection: make water transparent when camera is below surface ──
     const camBelowWater = this.camera.position.y < WATER_LEVEL;
@@ -423,6 +424,55 @@ export class SceneManager {
       this._postFX.compose(this.scene, this.camera);
     } else {
       this.renderer.render(this.scene, this.camera);
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  //  WASD/QE/+- keyboard movement (ported from Unity OrbitCamera)
+  //  Speed scales with camera distance for consistent feel.
+  // ──────────────────────────────────────────────
+  _handleKeyboardMovement(dt) {
+    const k = this._keys || {};
+    const tgt = this.controls.target;
+    const cam = this.camera;
+    const dist = cam.position.distanceTo(tgt);
+
+    // Base speed scaled by distance — slightly faster than before
+    let speed = 300 * dt * (dist / 350);
+    // Shift = boost
+    if (k['ShiftLeft'] || k['ShiftRight']) speed *= 2.5;
+
+    // Camera-relative directions projected onto horizontal plane
+    const fwd = new THREE.Vector3();
+    cam.getWorldDirection(fwd);
+    fwd.y = 0;
+    fwd.normalize();
+    const right = new THREE.Vector3();
+    right.crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
+
+    let moved = false;
+
+    // Arrow keys — move the camera focus point (up/down/left/right on screen)
+    if (k['ArrowUp'])    { tgt.addScaledVector(fwd, speed);    moved = true; }
+    if (k['ArrowDown'])  { tgt.addScaledVector(fwd, -speed);   moved = true; }
+    if (k['ArrowLeft'])  { tgt.addScaledVector(right, -speed);  moved = true; }
+    if (k['ArrowRight']) { tgt.addScaledVector(right, speed);   moved = true; }
+
+    // WASD — same movement for convenience
+    if (k['KeyW']) { tgt.addScaledVector(fwd, speed);    moved = true; }
+    if (k['KeyS']) { tgt.addScaledVector(fwd, -speed);   moved = true; }
+    if (k['KeyA']) { tgt.addScaledVector(right, -speed);  moved = true; }
+    if (k['KeyD']) { tgt.addScaledVector(right, speed);   moved = true; }
+
+    // Q/E — vertical
+    if (k['KeyQ']) { tgt.y -= speed * 0.5; moved = true; }
+    if (k['KeyE']) { tgt.y += speed * 0.5; moved = true; }
+
+    // Clamp target within terrain bounds
+    if (moved) {
+      const half = TERRAIN_SIZE / 2;
+      tgt.x = Math.max(-half, Math.min(half, tgt.x));
+      tgt.z = Math.max(-half, Math.min(half, tgt.z));
     }
   }
 
@@ -607,7 +657,7 @@ export class SceneManager {
     group.position.set(position.x, position.y, position.z);
 
     // Ground impact ring (pulsing)
-    const ringGeo = new THREE.RingGeometry(2.5, 4.5, 32);
+    const ringGeo = new THREE.RingGeometry(2.5, 4.5, 64);
     ringGeo.rotateX(-Math.PI / 2);
     const ringMat = new THREE.MeshBasicMaterial({
       color: 0xff5533, transparent: true, opacity: 0.55, side: THREE.DoubleSide,
@@ -617,7 +667,7 @@ export class SceneManager {
     group.add(ring);
 
     // Inner glow disc
-    const discGeo = new THREE.CircleGeometry(2.5, 32);
+    const discGeo = new THREE.CircleGeometry(2.5, 48);
     discGeo.rotateX(-Math.PI / 2);
     const discMat = new THREE.MeshBasicMaterial({
       color: 0xff8844, transparent: true, opacity: 0.2, side: THREE.DoubleSide,
@@ -691,7 +741,7 @@ export class SceneManager {
     group.position.set(point.x, point.y, point.z);
 
     // Outer pulsing ring
-    const ringGeo = new THREE.RingGeometry(3, 4.5, 32);
+    const ringGeo = new THREE.RingGeometry(3, 4.5, 64);
     ringGeo.rotateX(-Math.PI / 2);
     const ringMat = new THREE.MeshBasicMaterial({
       color: 0xff6b6b, transparent: true, opacity: 0.45, side: THREE.DoubleSide,
@@ -701,7 +751,7 @@ export class SceneManager {
     group.add(ring);
 
     // Core glowing sphere
-    const sphereGeo = new THREE.SphereGeometry(2.5, 16, 16);
+    const sphereGeo = new THREE.SphereGeometry(2.5, 24, 24);
     const sphereMat = new THREE.MeshStandardMaterial({
       color: 0xff5555, roughness: 0.25, emissive: 0x661111, emissiveIntensity: 0.4,
     });
@@ -746,26 +796,27 @@ export class SceneManager {
     this._measureLine = line;
     this._measureLine.userData = { type: 'measure', markerId };
 
-    // Distance label sprite
+    // Distance label sprite (high-res canvas)
     const dist = a.distanceTo(b);
     const elevDiff = Math.abs(a.y - b.y);
     const canvas = document.createElement('canvas');
-    canvas.width = 256; canvas.height = 80;
+    canvas.width = 512; canvas.height = 160;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = 'rgba(20, 10, 10, 0.75)';
-    ctx.fillRect(0, 0, 256, 80);
+    ctx.fillStyle = 'rgba(20, 10, 10, 0.82)';
+    ctx.fillRect(0, 0, 512, 160);
     ctx.strokeStyle = '#ff6b6b';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(2, 2, 252, 76);
-    ctx.fillStyle = '#ff8888';
-    ctx.font = 'bold 26px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(`${dist.toFixed(1)} m`, 128, 32);
+    ctx.lineWidth = 4;
+    ctx.strokeRect(4, 4, 504, 152);
     ctx.fillStyle = '#ffaaaa';
-    ctx.font = '18px Arial';
-    ctx.fillText(`\u0394elev: ${elevDiff.toFixed(1)} m`, 128, 60);
+    ctx.font = 'bold 54px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${dist.toFixed(1)} m`, 256, 68);
+    ctx.fillStyle = '#ffcccc';
+    ctx.font = '38px Arial';
+    ctx.fillText(`\u0394elev: ${elevDiff.toFixed(1)} m`, 256, 124);
 
     const tex = new THREE.CanvasTexture(canvas);
+    tex.anisotropy = 4;
     const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
     const sprite = new THREE.Sprite(spriteMat);
     const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
@@ -820,7 +871,7 @@ export class SceneManager {
     group.add(beacon);
 
     // Base ring
-    const ringGeo = new THREE.RingGeometry(2, 4, 32);
+    const ringGeo = new THREE.RingGeometry(2, 4, 64);
     ringGeo.rotateX(-Math.PI / 2);
     const ringMat = new THREE.MeshBasicMaterial({
       color: 0x58a6ff, transparent: true, opacity: 0.45, side: THREE.DoubleSide,
@@ -829,21 +880,23 @@ export class SceneManager {
     ring.position.y = 0.3;
     group.add(ring);
 
-    // Point number label
+    // Point number label (high-res canvas)
     const num = this._crossSectionPoints.length;
     const canvas = document.createElement('canvas');
-    canvas.width = 64; canvas.height = 64;
+    canvas.width = 192; canvas.height = 192;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = 'rgba(10, 20, 50, 0.8)';
-    ctx.fillRect(0, 0, 64, 64);
+    ctx.fillStyle = 'rgba(10, 20, 50, 0.85)';
+    ctx.fillRect(0, 0, 192, 192);
     ctx.strokeStyle = '#58a6ff';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(2, 2, 60, 60);
-    ctx.fillStyle = '#88ccff';
-    ctx.font = 'bold 36px Arial';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(4, 4, 184, 184);
+    ctx.fillStyle = '#aaddff';
+    ctx.font = 'bold 110px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(String(num), 32, 44);
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(num), 96, 100);
     const tex = new THREE.CanvasTexture(canvas);
+    tex.anisotropy = 4;
     const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
     const sprite = new THREE.Sprite(spriteMat);
     sprite.position.y = 20;
@@ -911,7 +964,7 @@ export class SceneManager {
     const strikeRad = (90 - strikeAngle) * Math.PI / 180;
 
     // Bedding plane disc (semi-transparent)
-    const discGeo = new THREE.CircleGeometry(9, 32);
+    const discGeo = new THREE.CircleGeometry(9, 64);
     discGeo.rotateX(-Math.PI / 2);
     const discMat = new THREE.MeshBasicMaterial({
       color: 0xffa500, transparent: true, opacity: 0.2, side: THREE.DoubleSide,
@@ -963,20 +1016,22 @@ export class SceneManager {
     const centre = new THREE.Mesh(centreGeo, centreMat);
     group.add(centre);
 
-    // Angle label sprite
+    // Angle label sprite (high-res canvas)
     const canvas = document.createElement('canvas');
-    canvas.width = 128; canvas.height = 64;
+    canvas.width = 384; canvas.height = 192;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = 'rgba(30, 15, 0, 0.8)';
-    ctx.fillRect(0, 0, 128, 64);
+    ctx.fillStyle = 'rgba(30, 15, 0, 0.85)';
+    ctx.fillRect(0, 0, 384, 192);
     ctx.strokeStyle = '#ffaa44';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(2, 2, 124, 60);
-    ctx.fillStyle = '#ffcc66';
-    ctx.font = 'bold 28px Arial';
+    ctx.lineWidth = 5;
+    ctx.strokeRect(4, 4, 376, 184);
+    ctx.fillStyle = '#ffdd88';
+    ctx.font = 'bold 80px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(`S: ${Math.round(strikeAngle)}\u00B0`, 64, 42);
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`S: ${Math.round(strikeAngle)}\u00B0`, 192, 100);
     const tex = new THREE.CanvasTexture(canvas);
+    tex.anisotropy = 4;
     const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
     const sprite = new THREE.Sprite(spriteMat);
     sprite.position.y = 7;
@@ -1053,6 +1108,8 @@ export class SceneManager {
     this._disposed = true;
     if (this._animId) cancelAnimationFrame(this._animId);
     window.removeEventListener('resize', this._onResize);
+    window.removeEventListener('keydown', this._onKeyDown);
+    window.removeEventListener('keyup', this._onKeyUp);
     this.controls.dispose();
     this._postFX?.colorTarget?.dispose();
     this.renderer.dispose();

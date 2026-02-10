@@ -21,7 +21,9 @@ export default function useKeyboardShortcuts() {
         case '6': s.setActiveTool('crosssection'); break;
         case 'l': case 'L': s.togglePanel('legend');   break;
         case 'n': case 'N': s.togglePanel('notebook'); break;
+        case 'h': case 'H': s.toggleHelp();             break;
         case 'Escape':
+          s.closeHelp();
           s.hideRockPopup();
           s.closePanel();
           break;

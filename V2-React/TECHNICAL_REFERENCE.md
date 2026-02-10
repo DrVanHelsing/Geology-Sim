@@ -781,7 +781,7 @@ vec3 gerstner(vec3 pos, float time) {
 }
 ```
 
-The ocean uses a 300×300 vertex grid (up from 200×200) for finer wave resolution.
+The ocean uses a 400×400 vertex grid on a **20 000 m × 20 000 m plane** (10× terrain size), extending to the visible horizon to create an island-in-the-ocean illusion. Wave amplitude is attenuated at distance via `smoothstep(8000, 2000, distFromCentre)`, and a horizon-haze fog blend softens the geometric edge.
 
 **Why 6 waves**: Four Gerstner components produced recognisable periodicity. Adding two high-frequency waves (w5: freq 0.065, amp 0.07; w6: freq 0.09, amp 0.04) breaks up the repeating pattern and adds fine-scale surface chop, significantly improving visual realism.
 
@@ -794,19 +794,31 @@ The ocean uses a 300×300 vertex grid (up from 200×200) for finer wave resoluti
 float F0 = 0.02;  // water at normal incidence
 float fresnel = F0 + (1.0 - F0) * pow(1.0 - NdotV, 5.0);
 
-// Sky reflection (approximate: use up-reflected view direction)
+// Sky reflection with horizon colour blending
 vec3 reflected = reflect(-viewDir, normal);
 float skyGrad = reflected.y * 0.5 + 0.5;
 vec3 skyColor = mix(vec3(0.6, 0.7, 0.8), vec3(0.3, 0.5, 0.8), skyGrad);
+skyColor += uHorizonColor * pow(1.0 - reflected.y, 3.0) * 0.4;
+
+// Sun-path shimmer (wide column of light toward camera)
+float shimmer = pow(max(0.0, dot(reflected, sunDir)), 16.0) * 0.35;
+
+// Deep-ocean darkening at distance
+float distDarken = smoothstep(1500.0, 6000.0, distFromCentre) * 0.5;
 
 // Depth-based water colour
 float depth = waterLevel - terrainHeight;
 vec3 shallowColor = vec3(0.1, 0.5, 0.5);
 vec3 deepColor = vec3(0.02, 0.08, 0.15);
 vec3 waterColor = mix(shallowColor, deepColor, smoothstep(0.0, 30.0, depth));
+waterColor -= vec3(distDarken);
 
-color = mix(waterColor, skyColor, fresnel);
+color = mix(waterColor, skyColor, fresnel) + sunColor * shimmer;
 ```
+
+**Horizon colour blending**: The `uHorizonColor` uniform matches the atmospheric sky dome's horizon band. At grazing reflection angles (`pow(1.0 - R.y, 3)`), the sky colour gradually transitions to this warm horizon hue, producing the realistic effect of distant reflections picking up the atmospheric haze colour rather than deep-sky blue.
+
+**Sun-path shimmer**: A broad `pow(16)` specular term creates the wide column of specular light that stretches across water between the sun and the camera. This is distinct from the sharp triple specular (1024+256+48) which models the direct sun pinpoint; the shimmer captures the mesoscale sun glitter pattern.
 
 ### Triple Specular Highlights
 
@@ -825,13 +837,14 @@ color += sunColor * (spec1 * 3.0 + spec2 * 0.6 + spec3 * 0.15);
 ### Multi-Octave Caustic Shimmer
 
 ```glsl
+float distFade = smoothstep(3000.0, 800.0, distFromCentre);
 float c1 = vnoise(worldPos.xz * 0.3 + time * vec2(0.5, 0.3));
 float c2 = vnoise(worldPos.xz * 0.7 + time * vec2(-0.3, 0.4));
-float caustic = pow(c1, 3.0) * 0.12 + pow(c2, 4.0) * 0.06;
+float caustic = (pow(c1, 3.0) * 0.12 + pow(c2, 4.0) * 0.06) * distFade;
 color += vec3(caustic);
 ```
 
-**Why multi-octave**: A single caustic noise octave produces a regular, tile-like shimmer pattern. The second octave at different scale and scroll direction breaks up visible repetition and adds depth, producing a more convincing dappled-light effect.
+**Why distance-faded caustics**: On the expanded 20 km ocean plane, caustic noise tiles become visible as a repetitive pattern beyond ~3 km. The `smoothstep(3000, 800, dist)` fade eliminates this by smoothly reducing caustic intensity with distance, while preserving the full effect near the island where detail is needed.
 
 ### Lake Gerstner Waves
 
@@ -858,6 +871,8 @@ Lake geometry uses `CircleGeometry(1, 96)` (up from 64 segments) for smoother sh
 
 **Why finite-difference normals**: For a multi-wave Gerstner sum, the analytical normal involves summing partial derivatives of all 5 wave components — computationally equivalent to evaluating the wave function twice more (forward + backward samples). Finite-difference normals (`cross(dz, dx)` from ε-offset evaluations) are simpler to implement, numerically stable for 5+ wave components, and produce identical visual quality.
 
+The lake fragment shader additionally includes **horizon-colour reflection blending** (`uHorizonColor * pow(1.0 - R.y, 3.0) * 0.35`), **sun-path shimmer** (`pow(dot(R, L), 16) * 0.25`), enhanced SSS (intensity 0.22, warmer translucency), and increased diffuse contribution (0.14). These additions bring lake surfaces to visual parity with the ocean.
+
 ### Lake Water Level
 
 Lake water surfaces are placed at `minRimElevation + 1.8 m` (previously `minRim - 0.3 m`). Combined with deeper basin carving (16–24 m), this ensures lakes appear convincingly full with water visibly lapping at the shoreline rather than sitting below the rim.
@@ -865,33 +880,62 @@ Lake water surfaces are placed at `minRimElevation + 1.8 m` (previously `minRim 
 ### River Flow Shader
 
 ```glsl
-// UV.y represents distance along river — used for flow direction
-float flow = vUv.y * 8.0 + time * 1.5;
-// 4-component ripple system
-float ripple1 = sin(flow) * 0.3;
-float ripple2 = sin(flow * 2.3 + 1.5) * 0.15;
-float ripple3 = sin(flow * 3.7 + 0.8) * 0.08;
-float ripple4 = sin(flow * 5.1 + 2.3) * 0.04;
-float wave = ripple1 + ripple2 + ripple3 + ripple4;
+// Vertex shader: 5-component flowing ripples along UV.y (downstream)
+float ripple = 0.0;
+ripple += sin(uv.y * 12.0 + uTime * 2.5) * 0.08;
+ripple += sin(uv.y * 18.0 + uTime * 1.8 + 1.5) * 0.05;
+ripple += sin(uv.y * 25.0 + uTime * 3.2 + 0.8) * 0.03;
+ripple += sin(uv.y * 33.0 + uTime * 4.0 + 2.3) * 0.018;
+ripple += sin(uv.y * 40.0 + uTime * 5.5 + 3.7) * 0.012;
+pos.y += ripple;
 
-// Multi-octave flow-aligned caustics
-float c1 = vnoise(vec2(vUv.x * 5.0, flow * 0.5));
-float c2 = vnoise(vec2(vUv.x * 9.0, flow * 0.8 + 3.0));
-float caustic = c1 * 0.15 + pow(c2, 2.0) * 0.08;
-
-// Subsurface scattering approximation
-float sss = pow(max(0.0, dot(viewDir, -sunDir)), 4.0) * 0.08;
-
-// Edge tint (shallow at edges, deep at centre)
-float edgeDist = abs(vUv.x - 0.5) * 2.0;
-vec3 waterColor = mix(deepColor, shallowColor, edgeDist) + vec3(0.0, sss, sss * 0.5);
+// Flow-aware finite-difference normals (UV-space)
+float eps = 0.002;
+vec3 posU = computeDisplacement(uv + vec2(eps, 0.0));
+vec3 posD = computeDisplacement(uv - vec2(eps, 0.0));
+vec3 posR = computeDisplacement(uv + vec2(0.0, eps));
+vec3 posL = computeDisplacement(uv - vec2(0.0, eps));
+vec3 flowNormal = normalize(cross(posR - posL, posU - posD));
 ```
 
-The river fragment shader also uses triple specular (1024 + 128 + 32 exponents) matching the ocean and lake systems.
+```glsl
+// Fragment shader: 3-octave flow-aligned caustics
+float flow = vUv.y * 8.0 + uTime * 2.0;
+float c1 = vnoise(vec2(vUv.x * 5.0, flow * 0.5));
+float c2 = vnoise(vec2(vUv.x * 9.0, flow * 0.8 + 3.0));
+float c3 = vnoise(vec2(vUv.x * 14.0, flow * 1.2 + 6.0));
+float caustic = c1 * 0.15 + pow(c2, 2.0) * 0.08 + pow(c3, 3.0) * 0.04;
 
-**Why 4-component ripples**: The original 2-component system produced a clearly periodic wave pattern. Adding two higher-frequency waves (3.7× and 5.1× base frequency) with decreasing amplitude breaks up the repetition and adds the fine-scale turbulence visible on real flowing water.
+// Edge foam (noise-driven, near banks)
+float edgeDist = abs(vUv.x - 0.5) * 2.0;
+float foam = smoothstep(0.7, 1.0, edgeDist) *
+             vnoise(vec2(vUv.x * 20.0, flow * 0.6)) * 0.3;
 
-**Why SSS**: Light transmitted through shallow water acquires a characteristic green-blue tint as it scatters through the water column. A simple forward-scatter approximation (`pow(dot(viewDir, -sunDir), 4)`) adds this translucency when the viewer looks toward the sun, enhancing the perception of water depth.
+// Flow streaks (thin bright lines moving downstream)
+float streak = sin(vUv.x * 60.0 + vUv.y * 8.0 - uTime * 3.0);
+streak = smoothstep(0.92, 1.0, streak) *
+         (1.0 - smoothstep(0.3, 0.7, edgeDist)) * 0.12;
+
+// Subsurface scattering (enhanced: 0.18 intensity)
+float sss = pow(max(0.0, dot(viewDir, -sunDir)), 4.0) * 0.18;
+
+vec3 waterColor = mix(deepColor, shallowColor, edgeDist);
+waterColor += vec3(0.0, sss, sss * 0.5) + foam + streak;
+```
+
+The river fragment shader also uses triple specular (1024 + 128 + 32 exponents), **sun-path shimmer** (`pow(dot(R, L), 16) * 0.2`), and **horizon-colour reflection blending** matching the ocean and lake systems.
+
+**Why 5-component ripples**: The original 2-component system produced a clearly periodic wave pattern. Upgrading to 4, then 5 components with frequencies from 12 to 40 and decreasing amplitudes progressively breaks up visible repetition at every viewing distance. The 5th high-frequency component (freq 40, speed 5.5) adds fine-scale turbulence visible only at close range.
+
+**Why flow-aware normals**: The previous analytical normal approximation could not account for the multi-frequency displacement surface. Finite-difference normals computed from 4 UV-space neighbours produce geometrically accurate normals for the displaced surface, enabling correct specular reflections that shift with the flow.
+
+**Edge foam**: Shallow, turbulent water at riverbanks naturally generates foam. The noise-driven foam pattern (`vnoise` modulated by bank proximity) scrolls downstream with the flow, simulating realistic bank-edge turbulence.
+
+**Flow streaks**: Thin bright lines moving downstream simulate the visual effect of sunlit current threads on the water surface — a phenomenon visible on real rivers when viewed from above.
+
+**Why 3-octave caustics**: The third octave (freq ×14, speed ×1.2) adds fine-grained dappled light that enriches the interference pattern, especially at close range where 2-octave patterns appeared too uniform.
+
+**Why SSS**: Light transmitted through shallow water acquires a characteristic green-blue tint as it scatters through the water column. The enhanced intensity (0.18, up from 0.08) with warmer translucency colours produces more visible backlighting when viewing toward the sun, improving the perception of river depth.
 
 **Why UV-based flow**: The river's V-coordinate naturally increases along its length. Scrolling the wave function along V creates the visual impression of water flowing downstream. Edge distance from UV.x = 0.5 (centre) provides automatic bank-proximity shading.
 
@@ -1604,8 +1648,8 @@ Lake water surfaces sit at `minRimElevation + 1.8 m`, where `minRimElevation` is
 
 | Constant | Value | File |
 |---|---|---|
-| Camera FOV | 60° | SceneManager.js |
-| Camera near/far | 1 / 20,000 | SceneManager.js |
+| Camera FOV | 55° | SceneManager.js |
+| Camera near/far | 1 / 25,000 | SceneManager.js |
 | Shadow map size | 2048² | SceneManager.js |
 | Shadow frustum | ±1400, far 4000 | SceneManager.js |
 | Sun light intensity | 1.6 | SceneManager.js |
@@ -1615,13 +1659,14 @@ Lake water surfaces sit at `minRimElevation + 1.8 m`, where `minRimElevation` is
 | Sun position | `_sunDir × 1500` | SceneManager.js |
 | Sun orb radius | 120 (sphere) + 300 (glow) | AtmosphereSystem.js |
 | Sun orb distance | 6000 along `_sunDir` | AtmosphereSystem.js |
-| Ocean grid | 300 × 300 | WaterSystem.js |
+| Ocean grid | 400 × 400 | WaterSystem.js |
+| Ocean plane size | 20,000 m (10× terrain) | WaterSystem.js |
 | Lake segments | 96 | WaterSystem.js |
 | Tone mapping | ACESFilmic | SceneManager.js |
 | Exposure | 1.15 | SceneManager.js |
-| Max orbit distance | 5,000 | SceneManager.js |
+| Max orbit distance | 4,000 | SceneManager.js |
 | Max polar angle | 0.48π | SceneManager.js |
-| Damping factor | 0.08 | SceneManager.js |
+| Damping factor | 0.18 | SceneManager.js |
 | Fog type | Exp² | SceneManager.js |
 | SSAO kernel size | 12 | PostProcessing.js |
 | SSAO blend | 50% white | PostProcessing.js |

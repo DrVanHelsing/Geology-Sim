@@ -2,7 +2,7 @@ import useStore from '../store/useStore';
 import {
   NavigateIcon, IdentifyIcon, DrillIcon, MeasureIcon,
   StrikeDipIcon, CrossSectionIcon,
-  LayersIcon, NotebookIcon, SettingsIcon,
+  LayersIcon, NotebookIcon, HelpIcon, SettingsIcon,
 } from './icons/Icons';
 
 const TOOLS = [
@@ -24,6 +24,8 @@ export default function Sidebar() {
   const setTool     = useStore((s) => s.setActiveTool);
   const activePanel = useStore((s) => s.activePanel);
   const togglePanel = useStore((s) => s.togglePanel);
+  const helpOpen    = useStore((s) => s.helpOpen);
+  const toggleHelp  = useStore((s) => s.toggleHelp);
 
   return (
     <nav id="sidebar">
@@ -59,8 +61,15 @@ export default function Sidebar() {
 
       <div className="sb-spacer" />
 
-      {/* Settings */}
+      {/* Help & Settings */}
       <div className="sb-section">
+        <button
+          className={`sb-btn${helpOpen ? ' active' : ''}`}
+          data-tooltip="Help (H)"
+          onClick={() => toggleHelp()}
+        >
+          <HelpIcon />
+        </button>
         <button
           className={`sb-btn${activePanel === 'settings' ? ' active' : ''}`}
           data-tooltip="Settings"
