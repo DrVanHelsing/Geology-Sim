@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Structural Geology Field Mapping Simulator</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    #scene-container { width: 100%; height: 100vh; }
+    /* Tool Panel Styles */
+    #tool-panel {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      width: 200px;
+      z-index: 10;
+    }
+    .tool-button {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 5px;
+      background: #007BFF;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      text-align: left;
+      cursor: pointer;
+    }
+    .tool-button.active {
+      background: #0056b3;
+    }
+    .tool-content {
+      display: none;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 10px;
+      border-radius: 5px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .tool-content.active {
+      display: block;
+    }
+    #notes {
+      width: 100%;
+      height: 300px;
+      resize: none;
+    }
+    #export-notes-button {
+      width: 100%;
+      margin-top: 10px;
+      padding: 10px;
+      background: #28a745;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    #export-notes-button:hover {
+      background: #218838;
+    }
+    /* Compass Styles */
+    #compass {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      width: 150px;
+      height: 150px;
+      z-index: 10;
+    }
+    /* Height Scale Styles */
+    #height-scale {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 50px;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.8);
+      overflow: hidden;
+      pointer-events: none;
+      z-index: 10;
+    }
+    #height-scale .scale-line {
+      position: absolute;
+      left: 40px;
+      width: 10px;
+      height: 1px;
+      background: black;
+    }
+    #height-scale .scale-label {
+      position: absolute;
+      left: 5px;
+      font-size: 12px;
+      color: black;
+      transform: translateY(50%);
+    }
+    #scale-marker {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      height: 20px;
+      background: black;
+      color: white;
+      text-align: center;
+      font-size: 14px;
+      line-height: 20px;
+      padding: 0 5px;
+      border-radius: 4px;
+      pointer-events: none;
+      z-index: 10;
+    }
+    #scale-line {
+      position: absolute;
+      bottom: 45px;
+      left: 50%;
+      transform: translateX(-50%);
+      height: 2px;
+      background: black;
+      pointer-events: none;
+      z-index: 10;
+    }
+    /* Crosshair Styles */
+    #crosshair {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 30px;
+      height: 30px;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 10;
+    }
+    #crosshair:before,
+    #crosshair:after {
+      content: '';
+      position: absolute;
+      background-color: red;
+    }
+    #crosshair:before {
+      left: 50%;
+      top: 0;
+      width: 2px;
+      height: 100%;
+      transform: translateX(-50%);
+    }
+    #crosshair:after {
+      top: 50%;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      transform: translateY(-50%);
+    }
+    /* Drill Core Display Styles */
+    #drill-core-display {
+      position: absolute;
+      bottom: 20px;
+      right: 240px;
+      width: 300px;
+      max-height: 600px;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 10px;
+      overflow-y: auto;
+      border-radius: 8px;
+      z-index: 10;
+    }
+    #drill-core-display h2 {
+      margin-top: 0;
+    }
+    /* Stratigraphic Log Styles */
+    .stratigraphic-log {
+      width: 100%;
+      border: 1px solid #ccc;
+      margin-bottom: 10px;
+    }
+    .stratigraphic-layer {
+      width: 100%;
+      text-align: center;
+      font-size: 14px;
+      color: #fff;
+    }
+  </style>
+  <!-- Include jsPDF library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+  <div id="scene-container"></div>
+
+  <!-- Tool Panel -->
+  <div id="tool-panel">
+    <!-- Notebook Tool -->
+    <button id="notebook-button" class="tool-button">Notebook</button>
+    <div id="notebook-content" class="tool-content">
+      <h2>Notebook</h2>
+      <textarea id="notes" placeholder="Write your observations here..."></textarea>
+      <button id="export-notes-button">Export Notes as PDF</button>
+    </div>
+
+    <!-- Drill Core Tool -->
+    <button id="drill-button" class="tool-button">Drill Core</button>
+  </div>
+
+  <!-- Compass Element -->
+  <canvas id="compass"></canvas>
+  <div id="height-scale"></div>
+  <div id="scale-line"></div>
+  <div id="scale-marker">Scale</div>
+  <!-- Crosshair Element -->
+  <div id="crosshair"></div>
+  <!-- Drill Core Display -->
+  <div id="drill-core-display" style="display: none;">
+    <h2>Drill Core</h2>
+    <div id="core-container"></div>
+    <div id="log-container"></div>
+  </div>
+
+  <!-- Include Three.js library (version r122) -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.122.0/build/three.min.js"></script>
+  <!-- Include OrbitControls -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.122.0/examples/js/controls/OrbitControls.js"></script>
+
+  <!-- Your Custom JavaScript Code -->
+  <script>
+    // Import jsPDF module
+    const { jsPDF } = window.jspdf;
+
+    // Scene, Camera, Renderer Setup
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xbfd1e5);
+
+    const camera = new THREE.PerspectiveCamera(
+      75, window.innerWidth / window.innerHeight, 0.1, 100000 // Increased far clipping plane
+    );
+    const initialCameraHeight = 0; // Initial height of the camera in the simulator
+    camera.position.set(0, initialCameraHeight, 5000);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.getElementById('scene-container').appendChild(renderer.domElement);
+
+    // Orbit Controls
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.enablePan = true;
+    controls.maxDistance = 50000; // Maximum zoom-out distance
+    controls.minDistance = 10; // Minimum zoom-in distance
+
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambientLight);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(10000, 20000, 10000);
+    scene.add(directionalLight);
+
+    // Define the reduced area size (121 km²)
+    const areaSize = 11000; // Approximately 11,000 meters on each side
+
+    // Create Rock Layers with increased thickness
+    const rockLayers = [];
+    let basePositionY = 0; // Starting Y position for the bottom layer
+
+    // Helper function to create a rock layer
+    function createRockLayer(params) {
+      const { color, thickness, positionY, minerals, characteristics, name, properties } = params;
+      const geometry = new THREE.PlaneBufferGeometry(areaSize, areaSize);
+      const material = new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.rotation.x = -Math.PI / 2; // Rotate to make it horizontal
+      mesh.position.y = positionY;
+      mesh.userData = { minerals, characteristics, name, thickness, properties, color, positionY };
+      scene.add(mesh);
+      return mesh;
+    }
+
+    // Dolomitic Limestone: 15m thick
+    rockLayers.push(createRockLayer({
+      name: 'Dolomitic Limestone',
+      color: 0xA0522D, // Sienna
+      thickness: 15,
+      positionY: basePositionY,
+      minerals: ['Dolomite', 'Calcite'],
+      characteristics: 'Dolomitic limestone',
+      properties: {
+        grainSize: 'Fine',
+        grainAngularity: 'Rounded',
+        color: 'Light Brown',
+        fossils: ['Coral']
+      }
+    }));
+    basePositionY += 15; // Update base position for the next layer
+
+    // Sandstone interlayered with shale: 75m thick
+    rockLayers.push(createRockLayer({
+      name: 'Sandstone and Shale',
+      color: 0xDEB887, // Burlywood
+      thickness: 75,
+      positionY: basePositionY,
+      minerals: ['Quartz', 'Feldspar'],
+      characteristics: 'Sandstone interlayered with shale',
+      properties: {
+        grainSize: 'Medium',
+        grainAngularity: 'Sub-angular',
+        color: 'Yellowish',
+        fossils: ['Trilobites']
+      }
+    }));
+    basePositionY += 75;
+
+    // Schist: 12m thick
+    rockLayers.push(createRockLayer({
+      name: 'Schist',
+      color: 0x808080, // Gray
+      thickness: 12,
+      positionY: basePositionY,
+      minerals: ['Muscovite', 'Biotite'],
+      characteristics: 'Schist',
+      properties: {
+        grainSize: 'Coarse',
+        grainAngularity: 'Angular',
+        color: 'Gray',
+        fossils: []
+      }
+    }));
+    basePositionY += 12;
+
+    // Limestone: 30m thick
+    rockLayers.push(createRockLayer({
+      name: 'Limestone',
+      color: 0x8B4513, // SaddleBrown
+      thickness: 30,
+      positionY: basePositionY,
+      minerals: ['Calcite', 'Aragonite'],
+      characteristics: 'Limestone',
+      properties: {
+        grainSize: 'Fine',
+        grainAngularity: 'Rounded',
+        color: 'Dark Brown',
+        fossils: ['Ammonites']
+      }
+    }));
+    basePositionY += 30;
+
+    // Compass Functionality
+    const compassCanvas = document.getElementById('compass');
+    const compassContext = compassCanvas.getContext('2d');
+    compassCanvas.width = 150;
+    compassCanvas.height = 150;
+
+    function updateCompass() {
+      const vector = new THREE.Vector3();
+      camera.getWorldDirection(vector);
+
+      // Calculate azimuth and elevation (in degrees)
+      let azimuth = Math.atan2(vector.x, vector.z) * (180 / Math.PI);
+      azimuth = (azimuth + 360) % 360; // Normalize azimuth to 0-360°
+
+      let elevation = Math.asin(vector.y) * (180 / Math.PI); // Elevation angle between -90° and 90°
+
+      drawCompass(azimuth, elevation);
+    }
+
+    function drawCompass(azimuth, elevation) {
+      const ctx = compassContext;
+      const width = compassCanvas.width;
+      const height = compassCanvas.height;
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const radius = Math.min(centerX, centerY) - 10;
+
+      ctx.clearRect(0, 0, width, height);
+
+      // Draw outer circle
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Draw degree markings (multiples of 10)
+      for (let angle = 0; angle < 360; angle += 10) {
+        const rad = (angle - azimuth) * (Math.PI / 180);
+        const xInner = centerX + (radius - 10) * Math.sin(rad);
+        const yInner = centerY - (radius - 10) * Math.cos(rad);
+        const xOuter = centerX + radius * Math.sin(rad);
+        const yOuter = centerY - radius * Math.cos(rad);
+
+        ctx.beginPath();
+        ctx.moveTo(xInner, yInner);
+        ctx.lineTo(xOuter, yOuter);
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = angle % 90 === 0 ? 2 : 1;
+        ctx.stroke();
+
+        // Draw degree labels every 30 degrees
+        if (angle % 30 === 0) {
+          const xText = centerX + (radius - 20) * Math.sin(rad);
+          const yText = centerY - (radius - 20) * Math.cos(rad);
+          ctx.font = '10px Arial';
+          ctx.fillStyle = '#000';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText((angle + 360) % 360, xText, yText);
+        }
+      }
+
+      // Draw compass needle for azimuth
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.lineTo(
+        centerX + (radius - 30) * Math.sin(0),
+        centerY - (radius - 30) * Math.cos(0)
+      );
+      ctx.strokeStyle = 'red';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Draw elevation indicator
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.rotate(-azimuth * (Math.PI / 180));
+      ctx.beginPath();
+      const elevationRad = elevation * (Math.PI / 180);
+      const elevationY = -elevationRad * (radius - 40); // Scale elevation for display
+      ctx.moveTo(-5, elevationY);
+      ctx.lineTo(5, elevationY);
+      ctx.strokeStyle = 'blue';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+
+      // Draw elevation markings on Y-axis (multiples of 10 degrees from -90° to +90°)
+      for (let angle = -90; angle <= 90; angle += 10) {
+        const yPos = centerY - (angle / 90) * (radius - 40);
+        ctx.beginPath();
+        ctx.moveTo(centerX - 5, yPos);
+        ctx.lineTo(centerX + 5, yPos);
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Label every 30 degrees
+        if (angle % 30 === 0 && angle !== 0) {
+          ctx.font = '10px Arial';
+          ctx.fillStyle = '#000';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(angle + '°', centerX + 10, yPos);
+        }
+      }
+    }
+
+    // Height Scale Functionality
+    function updateHeightScale() {
+      const heightScale = document.getElementById('height-scale');
+      heightScale.innerHTML = ''; // Clear previous content
+
+      const scaleHeight = heightScale.clientHeight;
+      const numTicks = 20; // Number of ticks to display
+      const tickSpacing = scaleHeight / numTicks;
+      const cameraY = camera.position.y;
+
+      for (let i = 0; i <= numTicks; i++) {
+        const tickPosition = i * tickSpacing;
+        const worldY = cameraY + ((scaleHeight / 2 - tickPosition) * 0.5); // Adjust scaling factor as needed
+
+        // Create tick line
+        const tick = document.createElement('div');
+        tick.className = 'scale-line';
+        tick.style.top = `${tickPosition}px`;
+        heightScale.appendChild(tick);
+
+        // Create label
+        const label = document.createElement('div');
+        label.className = 'scale-label';
+        label.style.top = `${tickPosition}px`;
+        label.innerHTML = `${worldY.toFixed(0)} m`;
+        heightScale.appendChild(label);
+      }
+    }
+
+    // Scale Marker Functionality
+    function updateScaleMarker() {
+      const scaleMarker = document.getElementById('scale-marker');
+      const scaleLine = document.getElementById('scale-line');
+
+      // Desired on-screen length in pixels (1cm ~ 37.8 pixels)
+      const onscreenLength = 37.8 * window.devicePixelRatio; // Adjust for device pixel ratio
+
+      // Calculate the world distance corresponding to onscreenLength at the center of the screen
+      const fov = camera.fov * (Math.PI / 180); // Convert FOV to radians
+      const cameraZ = camera.position.z;
+      const heightInWorldUnits = 2 * Math.tan(fov / 2) * cameraZ;
+      const worldPerPixel = heightInWorldUnits / renderer.domElement.clientHeight;
+      const scaleDistance = worldPerPixel * onscreenLength;
+
+      // Update the scale marker text
+      scaleMarker.innerHTML = `${scaleDistance.toFixed(2)} m`;
+
+      // Update the scale line width
+      scaleLine.style.width = `${(onscreenLength / window.devicePixelRatio)}px`; // Adjust back for display
+    }
+
+    // Animation Loop
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      updateCompass();
+      updateHeightScale();
+      updateScaleMarker();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // Window Resize Handler
+    window.addEventListener('resize', onWindowResize, false);
+    function onWindowResize() {
+      const container = document.getElementById('scene-container');
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    }
+
+    // Tool Panel Functionality
+    const notebookButton = document.getElementById('notebook-button');
+    const notebookContent = document.getElementById('notebook-content');
+
+    const drillButton = document.getElementById('drill-button');
+
+    const toolButtons = [notebookButton];
+    const toolContents = [notebookContent];
+
+    toolButtons.forEach((button, index) => {
+      button.addEventListener('click', () => {
+        const isActive = button.classList.contains('active');
+
+        // Collapse all tools
+        toolButtons.forEach(btn => btn.classList.remove('active'));
+        toolContents.forEach(content => content.classList.remove('active'));
+
+        if (!isActive) {
+          // Activate the clicked tool
+          button.classList.add('active');
+          toolContents[index].classList.add('active');
+        }
+      });
+    });
+
+    // Drill Core Functionality
+    let drilling = false;
+
+    drillButton.addEventListener('click', () => {
+      drilling = !drilling; // Toggle drilling mode
+      if (drilling) {
+        drillButton.classList.add('active');
+      } else {
+        drillButton.classList.remove('active');
+      }
+    });
+
+    renderer.domElement.addEventListener('click', onDocumentMouseClick, false);
+
+    function onDocumentMouseClick(event) {
+      event.preventDefault();
+
+      const rect = renderer.domElement.getBoundingClientRect();
+
+      const mouse = new THREE.Vector2(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1
+      );
+
+      if (drilling) {
+        // Proceed with drilling
+        performDrilling(mouse);
+        drilling = false;
+        drillButton.classList.remove('active');
+      } else {
+        // Regular interaction
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects(scene.children, true);
+
+        if (intersects.length > 0) {
+          const intersectedLayer = intersects[0].object;
+          if (intersectedLayer.userData && intersectedLayer.userData.name) {
+            const { name, minerals, characteristics } = intersectedLayer.userData;
+
+            // Display Rock Information
+            alert(
+              `Rock Type: ${name}\nMinerals: ${minerals.join(', ')}\nCharacteristics: ${characteristics}`
+            );
+          }
+        }
+      }
+    }
+
+    function performDrilling(mouse) {
+      // Prompt user for drill parameters
+      let length = prompt('Enter the length of the drill core in meters (or type "max" for maximum length):', '50');
+
+      if (length === null) {
+        // User cancelled
+        return;
+      }
+
+      if (length.toLowerCase() === 'max' || length === '') {
+        length = 'max';
+      } else {
+        length = parseFloat(length);
+        if (isNaN(length) || length <= 0) {
+          alert('Invalid length entered.');
+          return;
+        }
+      }
+
+      const angleInput = prompt('Enter the inclination angle of the drill core (degrees from vertical):', '0');
+      if (angleInput === null) {
+        // User cancelled
+        return;
+      }
+      const inclination = parseFloat(angleInput);
+      if (isNaN(inclination)) {
+        alert('Invalid inclination angle entered.');
+        return;
+      }
+
+      const azimuthInput = prompt('Enter the azimuth direction of the drill core (degrees from North):', '0');
+      if (azimuthInput === null) {
+        // User cancelled
+        return;
+      }
+      const azimuth = parseFloat(azimuthInput);
+      if (isNaN(azimuth)) {
+        alert('Invalid azimuth angle entered.');
+        return;
+      }
+
+      // Convert angles to radians
+      const inclinationRad = THREE.Math.degToRad(inclination);
+      const azimuthRad = THREE.Math.degToRad(azimuth);
+
+      // Calculate direction vector
+      const direction = new THREE.Vector3(
+        Math.sin(inclinationRad) * Math.sin(azimuthRad),
+        -Math.cos(inclinationRad),
+        Math.sin(inclinationRad) * Math.cos(azimuthRad)
+      ).normalize();
+
+      // Get the point in the world where the user clicked
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(rockLayers);
+
+      if (intersects.length > 0) {
+        const startPoint = intersects[0].point;
+
+        // Calculate maximum possible length based on model boundaries
+        const maxLength = calculateMaxDrillLength(startPoint, direction);
+
+        if (length === 'max') {
+          length = maxLength;
+        } else if (length > maxLength) {
+          alert(`The maximum drill length from this point is ${maxLength.toFixed(2)} meters.`);
+          length = maxLength;
+        }
+
+        // Create a line representing the drill core
+        const endPoint = startPoint.clone().addScaledVector(direction, length);
+
+        // Collect data along the drill path
+        const drillData = collectDrillData(startPoint, endPoint);
+
+        // Display the drill core and stratigraphic log
+        displayDrillCore(drillData);
+      } else {
+        alert('Drilling location is not valid.');
+      }
+    }
+
+    function calculateMaxDrillLength(startPoint, direction) {
+      // Calculate intersections with model boundaries
+      const tValues = [];
+
+      // Check intersection with horizontal boundaries (X-axis)
+      if (direction.x !== 0) {
+        const t1 = (-areaSize / 2 - startPoint.x) / direction.x;
+        const t2 = (areaSize / 2 - startPoint.x) / direction.x;
+        tValues.push(t1, t2);
+      }
+
+      // Check intersection with vertical boundaries (Y-axis)
+      if (direction.y !== 0) {
+        const minY = basePositionY - rockLayers.reduce((sum, layer) => sum + layer.userData.thickness, 0);
+        const t3 = (minY - startPoint.y) / direction.y;
+        tValues.push(t3);
+      }
+
+      // Check intersection with depth boundaries (Z-axis)
+      if (direction.z !== 0) {
+        const t4 = (-areaSize / 2 - startPoint.z) / direction.z;
+        const t5 = (areaSize / 2 - startPoint.z) / direction.z;
+        tValues.push(t4, t5);
+      }
+
+      // Filter positive t-values and find the smallest positive t
+      const positiveTValues = tValues.filter(t => t > 0);
+      const minPositiveT = Math.min(...positiveTValues);
+
+      return minPositiveT > 0 ? minPositiveT : 0;
+    }
+
+    function collectDrillData(startPoint, endPoint) {
+      const drillData = [];
+      const drillVector = new THREE.Vector3().subVectors(endPoint, startPoint);
+      const drillLength = drillVector.length();
+      const numSamples = 100; // Number of points along the drill path to sample
+      const sampleSpacing = drillLength / numSamples;
+
+      for (let i = 0; i <= numSamples; i++) {
+        const samplePoint = startPoint.clone().addScaledVector(drillVector.normalize(), i * sampleSpacing);
+
+        // Check if samplePoint is within the model boundaries
+        if (
+          samplePoint.x < -areaSize / 2 || samplePoint.x > areaSize / 2 ||
+          samplePoint.z < -areaSize / 2 || samplePoint.z > areaSize / 2 ||
+          samplePoint.y < basePositionY - rockLayers.reduce((sum, layer) => sum + layer.userData.thickness, 0) ||
+          samplePoint.y > basePositionY
+        ) {
+          // Outside the model boundaries
+          break;
+        }
+
+        // Raycast downward at the sample point to find the layer
+        const raycaster = new THREE.Raycaster(samplePoint, new THREE.Vector3(0, -1, 0));
+        const intersects = raycaster.intersectObjects(rockLayers);
+
+        if (intersects.length > 0) {
+          const layer = intersects[0].object.userData;
+          drillData.push({
+            depth: i * sampleSpacing,
+            layer: layer,
+          });
+        } else {
+          // No layer found, possibly reached the bottom
+          break;
+        }
+      }
+
+      return drillData;
+    }
+
+    function displayDrillCore(drillData) {
+      const drillCoreDisplay = document.getElementById('drill-core-display');
+      drillCoreDisplay.style.display = 'block';
+
+      const coreContainer = document.getElementById('core-container');
+      const logContainer = document.getElementById('log-container');
+
+      coreContainer.innerHTML = '';
+      logContainer.innerHTML = '';
+
+      // Group drill data by layers
+      const layersData = [];
+      let currentLayer = null;
+
+      drillData.forEach((dataPoint) => {
+        if (!currentLayer || currentLayer.layer.name !== dataPoint.layer.name) {
+          currentLayer = {
+            layer: dataPoint.layer,
+            startDepth: dataPoint.depth,
+            endDepth: dataPoint.depth,
+          };
+          layersData.push(currentLayer);
+        } else {
+          currentLayer.endDepth = dataPoint.depth;
+        }
+      });
+
+      // Display core visualization and stratigraphic log
+      layersData.forEach((layerData) => {
+        const layerThickness = layerData.endDepth - layerData.startDepth;
+
+        // Core Visualization
+        const coreSegment = document.createElement('div');
+        coreSegment.style.height = `${layerThickness * 2}px`; // Adjust scaling as needed
+        coreSegment.style.backgroundColor = `#${layerData.layer.color.toString(16).padStart(6, '0')}`;
+        coreSegment.className = 'stratigraphic-layer';
+        coreSegment.innerHTML = layerData.layer.name;
+        coreContainer.appendChild(coreSegment);
+
+        // Stratigraphic Log
+        const logEntry = document.createElement('div');
+        logEntry.className = 'stratigraphic-layer';
+        logEntry.style.height = `${layerThickness * 2}px`; // Adjust scaling as needed
+        logEntry.style.backgroundColor = `#${layerData.layer.color.toString(16).padStart(6, '0')}`;
+        logEntry.innerHTML = `
+          <strong>${layerData.layer.name}</strong><br>
+          Thickness: ${layerThickness.toFixed(2)} m<br>
+          Grain Size: ${layerData.layer.properties.grainSize}<br>
+          Grain Angularity: ${layerData.layer.properties.grainAngularity}<br>
+          Color: ${layerData.layer.properties.color}<br>
+          Fossils: ${layerData.layer.properties.fossils.join(', ') || 'None'}
+        `;
+        logContainer.appendChild(logEntry);
+      });
+    }
+
+    // Export Notes as PDF Functionality
+    const exportNotesButton = document.getElementById('export-notes-button');
+    const notesTextarea = document.getElementById('notes');
+
+    exportNotesButton.addEventListener('click', () => {
+      const notesContent = notesTextarea.value;
+
+      if (notesContent.trim() === '') {
+        alert('The notes are empty. Please write something before exporting.');
+        return;
+      }
+
+      // Create a new jsPDF instance
+      const doc = new jsPDF();
+
+      // Split the text into lines to handle long content
+      const lines = doc.splitTextToSize(notesContent, 180); // 180 is the page width minus margins
+
+      // Add the content to the PDF
+      doc.text(lines, 15, 20); // 15 and 20 are the x and y coordinates
+
+      // Save the PDF
+      doc.save('Geology_Notes.pdf');
+    });
+  </script>
+</body>
+</html>

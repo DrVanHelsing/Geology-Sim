@@ -1,0 +1,1453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Structural Geology Field Mapping Simulator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    /* ============================================================
+       CSS CUSTOM PROPERTIES
+       ============================================================ */
+    :root {
+      --sidebar-w: 52px;
+      --panel-w: 340px;
+      --statusbar-h: 30px;
+      --bg-dark: #0d1117;
+      --bg-panel: rgba(13, 17, 23, 0.94);
+      --bg-card: rgba(255,255,255,0.04);
+      --accent: #58a6ff;
+      --accent-dim: rgba(88,166,255,0.15);
+      --text-1: #e6edf3;
+      --text-2: #8b949e;
+      --text-3: #484f58;
+      --border: rgba(240,246,252,0.1);
+      --success: #3fb950;
+      --warning: #d29922;
+      --danger: #f85149;
+      --radius: 8px;
+      --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --mono: 'JetBrains Mono', 'Cascadia Code', monospace;
+    }
+
+    /* ============================================================
+       RESET & BASE
+       ============================================================ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font);
+      background: #000;
+      color: var(--text-1);
+      overflow: hidden;
+      height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--text-3); border-radius: 3px; }
+
+    /* ============================================================
+       VIEWPORT (Three.js canvas)
+       ============================================================ */
+    #viewport { position: fixed; inset: 0; z-index: 1; }
+    #viewport canvas { display: block; }
+
+    /* ============================================================
+       SIDEBAR
+       ============================================================ */
+    #sidebar {
+      position: fixed; left: 0; top: 0; bottom: 0;
+      width: var(--sidebar-w);
+      background: var(--bg-dark);
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; align-items: center;
+      padding: 10px 0; gap: 2px; z-index: 200;
+    }
+    .sb-section { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; padding: 0 6px; }
+    .sb-divider { width: 28px; height: 1px; background: var(--border); margin: 6px 0; }
+    .sb-btn {
+      width: 40px; height: 40px; border: none; border-radius: var(--radius);
+      background: transparent; color: var(--text-2); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s ease; position: relative;
+    }
+    .sb-btn svg { width: 20px; height: 20px; stroke-width: 1.8; }
+    .sb-btn:hover { background: rgba(255,255,255,0.06); color: var(--text-1); }
+    .sb-btn.active { background: var(--accent-dim); color: var(--accent); }
+    .sb-btn::after {
+      content: attr(data-tooltip); position: absolute; left: 50px; top: 50%;
+      transform: translateY(-50%); background: #1c2129; color: var(--text-1);
+      padding: 4px 10px; border-radius: 6px; font-size: 12px; white-space: nowrap;
+      pointer-events: none; opacity: 0; transition: opacity 0.15s;
+      border: 1px solid var(--border);
+    }
+    .sb-btn:hover::after { opacity: 1; }
+    .sb-spacer { flex: 1; }
+
+    /* ============================================================
+       PANEL (slides from sidebar)
+       ============================================================ */
+    #panel {
+      position: fixed; left: var(--sidebar-w); top: 0; bottom: var(--statusbar-h);
+      width: var(--panel-w); background: var(--bg-panel);
+      backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+      border-right: 1px solid var(--border);
+      transform: translateX(calc(-1 * var(--panel-w)));
+      transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+      z-index: 150; overflow-y: auto; overflow-x: hidden;
+    }
+    #panel.open { transform: translateX(0); }
+    .panel-page { display: none; padding: 20px; }
+    .panel-page.active { display: block; }
+    .panel-header {
+      font-size: 14px; font-weight: 600; color: var(--text-1);
+      margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+    }
+    .panel-header svg { width: 18px; height: 18px; color: var(--accent); }
+
+    /* Form elements */
+    .field-group { margin-bottom: 14px; }
+    .field-label { font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 5px; }
+    textarea, input[type="number"], input[type="text"], select {
+      width: 100%; background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text-1); font-family: var(--font);
+      font-size: 13px; padding: 8px 10px; outline: none; transition: border 0.15s;
+    }
+    textarea:focus, input:focus, select:focus { border-color: var(--accent); }
+    textarea { resize: vertical; min-height: 200px; font-size: 13px; line-height: 1.5; }
+
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 8px 16px; border: none; border-radius: 6px;
+      font-family: var(--font); font-size: 13px; font-weight: 500;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: #79c0ff; }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-success:hover { opacity: 0.9; }
+    .btn-outline {
+      background: transparent; border: 1px solid var(--border); color: var(--text-2);
+    }
+    .btn-outline:hover { border-color: var(--text-2); color: var(--text-1); }
+    .btn-block { width: 100%; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+
+    /* ============================================================
+       LEGEND
+       ============================================================ */
+    .legend-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px; border-radius: 6px; margin-bottom: 6px;
+      background: var(--bg-card); cursor: pointer; transition: background 0.15s;
+    }
+    .legend-item:hover { background: rgba(255,255,255,0.06); }
+    .legend-swatch {
+      width: 28px; height: 28px; border-radius: 4px; flex-shrink: 0;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .legend-info { flex: 1; }
+    .legend-name { font-size: 13px; font-weight: 500; }
+    .legend-elev { font-size: 11px; color: var(--text-2); margin-top: 1px; }
+
+    /* ============================================================
+       DRILL CORE DISPLAY
+       ============================================================ */
+    .core-wrapper {
+      display: flex; gap: 4px; margin-top: 12px;
+    }
+    .core-depth-axis {
+      width: 40px; flex-shrink: 0; position: relative; font-family: var(--mono); font-size: 10px; color: var(--text-2);
+    }
+    .core-depth-tick {
+      position: absolute; right: 0; transform: translateY(-50%);
+      display: flex; align-items: center; gap: 3px;
+    }
+    .core-depth-tick::after {
+      content: ''; width: 6px; height: 1px; background: var(--text-3);
+    }
+    .core-column {
+      width: 60px; flex-shrink: 0; border-radius: 4px; overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .core-segment {
+      width: 100%; transition: opacity 0.15s; cursor: pointer; position: relative;
+    }
+    .core-segment:hover { opacity: 0.8; }
+    .core-log {
+      flex: 1; display: flex; flex-direction: column;
+    }
+    .core-log-entry {
+      padding: 6px 8px; border-left: 3px solid transparent;
+      font-size: 12px; cursor: pointer; transition: background 0.15s;
+    }
+    .core-log-entry:hover { background: var(--bg-card); }
+    .core-log-name { font-weight: 600; margin-bottom: 2px; }
+    .core-log-detail { color: var(--text-2); font-size: 11px; line-height: 1.4; }
+
+    /* ============================================================
+       MEASURE RESULTS
+       ============================================================ */
+    .measure-result {
+      background: var(--bg-card); border-radius: 6px; padding: 12px; margin-bottom: 10px;
+    }
+    .measure-value { font-family: var(--mono); font-size: 20px; font-weight: 700; color: var(--accent); }
+    .measure-label { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+
+    /* ============================================================
+       STATUS BAR
+       ============================================================ */
+    #status-bar {
+      position: fixed; bottom: 0; left: var(--sidebar-w); right: 0;
+      height: var(--statusbar-h); background: var(--bg-dark);
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; padding: 0 16px; gap: 24px;
+      font-family: var(--mono); font-size: 11px; color: var(--text-2); z-index: 180;
+    }
+    .status-group { display: flex; align-items: center; gap: 6px; }
+    .status-label { color: var(--text-3); }
+    .status-value { color: var(--text-2); }
+    .status-rock { color: var(--accent); font-family: var(--font); font-weight: 500; }
+    .status-sep { width: 1px; height: 14px; background: var(--border); }
+
+    /* ============================================================
+       COMPASS
+       ============================================================ */
+    #compass-container {
+      position: fixed; bottom: 50px; right: 20px; z-index: 100;
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+    }
+    #compass-canvas {
+      width: 140px; height: 140px; border-radius: 50%;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    #compass-bearing {
+      font-family: var(--mono); font-size: 12px; color: var(--text-2);
+      background: rgba(13,17,23,0.85); padding: 2px 10px; border-radius: 10px;
+    }
+
+    /* ============================================================
+       SCALE BAR
+       ============================================================ */
+    #scale-bar-container {
+      position: fixed; bottom: 44px; left: 50%;
+      transform: translateX(calc(-50% + var(--sidebar-w) / 2));
+      z-index: 100; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    }
+    #scale-bar-line {
+      height: 3px; background: #fff; border-radius: 1px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.5); position: relative;
+    }
+    #scale-bar-line::before, #scale-bar-line::after {
+      content: ''; position: absolute; width: 3px; height: 8px;
+      background: #fff; top: -3px;
+    }
+    #scale-bar-line::before { left: 0; }
+    #scale-bar-line::after { right: 0; }
+    #scale-bar-label {
+      font-family: var(--mono); font-size: 11px; color: #fff;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    }
+
+    /* ============================================================
+       CROSSHAIR
+       ============================================================ */
+    #crosshair {
+      position: fixed; top: 50%; left: 50%;
+      width: 28px; height: 28px;
+      transform: translate(calc(-50% + var(--sidebar-w) / 2), -50%);
+      pointer-events: none; z-index: 50; opacity: 0.5;
+    }
+    #crosshair::before, #crosshair::after {
+      content: ''; position: absolute; background: #fff;
+      box-shadow: 0 0 4px rgba(0,0,0,0.5);
+    }
+    #crosshair::before { left: 50%; top: 0; width: 1.5px; height: 100%; transform: translateX(-50%); }
+    #crosshair::after  { top: 50%; left: 0; width: 100%; height: 1.5px; transform: translateY(-50%); }
+
+    /* ============================================================
+       ROCK INFO POPUP
+       ============================================================ */
+    #rock-popup {
+      position: fixed; top: 50%; left: 50%;
+      transform: translate(calc(-50% + var(--sidebar-w)/2), -50%);
+      background: var(--bg-panel); backdrop-filter: blur(24px);
+      border: 1px solid var(--border); border-radius: 12px;
+      padding: 24px; width: 360px; z-index: 300;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+      display: none;
+    }
+    #rock-popup.visible { display: block; }
+    .popup-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+    .popup-swatch { width: 24px; height: 24px; border-radius: 4px; }
+    .popup-close {
+      position: absolute; top: 12px; right: 12px; background: none;
+      border: none; color: var(--text-2); cursor: pointer; font-size: 18px;
+      width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+      border-radius: 6px;
+    }
+    .popup-close:hover { background: rgba(255,255,255,0.06); color: var(--text-1); }
+    .popup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .popup-field-label { font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; }
+    .popup-field-value { font-size: 13px; color: var(--text-1); margin-top: 2px; }
+
+    /* ============================================================
+       LOADING SCREEN
+       ============================================================ */
+    #loading {
+      position: fixed; inset: 0; background: var(--bg-dark);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      z-index: 9999; transition: opacity 0.6s;
+    }
+    #loading.done { opacity: 0; pointer-events: none; }
+    .loading-title { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+    .loading-sub { font-size: 13px; color: var(--text-2); margin-bottom: 24px; }
+    .loading-bar { width: 200px; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .loading-fill { width: 0%; height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s; }
+
+    /* ============================================================
+       RESPONSIVE
+       ============================================================ */
+    @media (max-width: 768px) {
+      :root { --panel-w: 280px; }
+      #compass-container { bottom: 40px; right: 10px; }
+      #compass-canvas { width: 100px; height: 100px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- LOADING SCREEN -->
+  <div id="loading">
+    <div class="loading-title">Structural Geology Simulator</div>
+    <div class="loading-sub">Generating terrain &amp; geological layers&hellip;</div>
+    <div class="loading-bar"><div class="loading-fill" id="loading-fill"></div></div>
+  </div>
+
+  <!-- THREE.JS VIEWPORT -->
+  <div id="viewport"></div>
+
+  <!-- SIDEBAR -->
+  <nav id="sidebar">
+    <div class="sb-section">
+      <!-- Navigate -->
+      <button class="sb-btn active" data-tool="navigate" data-tooltip="Navigate">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9c-1.5 1.5-3 3.2-3 5.5A5.5 5.5 0 0 0 7.5 20c1.8 0 3-.5 4.5-2 1.5 1.5 2.7 2 4.5 2a5.5 5.5 0 0 0 5.5-5.5c0-2.3-1.5-4-3-5.5l-7-7-7 7Z"/></svg>
+      </button>
+      <!-- Identify -->
+      <button class="sb-btn" data-tool="identify" data-tooltip="Identify Rock">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      </button>
+      <!-- Drill -->
+      <button class="sb-btn" data-tool="drill" data-tooltip="Drill Core">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+      </button>
+      <!-- Measure -->
+      <button class="sb-btn" data-tool="measure" data-tooltip="Measure">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/></svg>
+      </button>
+    </div>
+    <div class="sb-divider"></div>
+    <div class="sb-section">
+      <!-- Legend -->
+      <button class="sb-btn" data-panel="legend" data-tooltip="Layer Legend">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg>
+      </button>
+      <!-- Notebook -->
+      <button class="sb-btn" data-panel="notebook" data-tooltip="Field Notebook">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+      </button>
+    </div>
+    <div class="sb-spacer"></div>
+    <div class="sb-section">
+      <!-- Settings -->
+      <button class="sb-btn" data-panel="settings" data-tooltip="Settings">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+    </div>
+  </nav>
+
+  <!-- PANEL -->
+  <div id="panel">
+    <!-- LEGEND PAGE -->
+    <div class="panel-page" id="page-legend">
+      <div class="panel-header">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg>
+        Geological Legend
+      </div>
+      <div id="legend-list"></div>
+    </div>
+
+    <!-- NOTEBOOK PAGE -->
+    <div class="panel-page" id="page-notebook">
+      <div class="panel-header">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+        Field Notebook
+      </div>
+      <div class="field-group">
+        <div class="field-label">Observations</div>
+        <textarea id="notebook-text" placeholder="Record your field observations here...&#10;&#10;Tip: Click 'Add Location Stamp' to record your current position."></textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <button class="btn btn-outline btn-sm" id="btn-stamp" style="flex:1;">📍 Location Stamp</button>
+        <button class="btn btn-outline btn-sm" id="btn-timestamp" style="flex:1;">🕐 Timestamp</button>
+      </div>
+      <button class="btn btn-success btn-block" id="btn-export-pdf">Export as PDF</button>
+    </div>
+
+    <!-- DRILL RESULT PAGE -->
+    <div class="panel-page" id="page-drill">
+      <div class="panel-header">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+        Drill Core Result
+      </div>
+      <div id="drill-info" style="font-size:12px;color:var(--text-2);margin-bottom:12px;"></div>
+      <div id="drill-core-content"></div>
+    </div>
+
+    <!-- MEASURE RESULT PAGE -->
+    <div class="panel-page" id="page-measure">
+      <div class="panel-header">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/></svg>
+        Measurement
+      </div>
+      <div id="measure-content">
+        <p style="font-size:13px;color:var(--text-2);">Click two points on the terrain to measure distance, bearing, and elevation change.</p>
+      </div>
+    </div>
+
+    <!-- SETTINGS PAGE -->
+    <div class="panel-page" id="page-settings">
+      <div class="panel-header">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        Settings
+      </div>
+      <div class="field-group">
+        <div class="field-label">Water Level (m)</div>
+        <input type="number" id="setting-water" value="42" min="0" max="100" step="1">
+      </div>
+      <div class="field-group">
+        <div class="field-label">Fog Density</div>
+        <input type="number" id="setting-fog" value="0.00028" min="0" max="0.005" step="0.00005">
+      </div>
+      <div class="field-group">
+        <div class="field-label">Sun Elevation</div>
+        <input type="number" id="setting-sun" value="55" min="5" max="90" step="5">
+      </div>
+      <div style="margin-top:16px;">
+        <button class="btn btn-primary btn-block" id="btn-apply-settings">Apply Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATUS BAR -->
+  <div id="status-bar">
+    <div class="status-group">
+      <span class="status-label">X</span>
+      <span class="status-value" id="sx">--</span>
+    </div>
+    <div class="status-group">
+      <span class="status-label">Z</span>
+      <span class="status-value" id="sz">--</span>
+    </div>
+    <div class="status-sep"></div>
+    <div class="status-group">
+      <span class="status-label">Elev</span>
+      <span class="status-value" id="selev">--</span>
+    </div>
+    <div class="status-sep"></div>
+    <div class="status-group">
+      <span class="status-rock" id="srock">--</span>
+    </div>
+    <div style="flex:1;"></div>
+    <div class="status-group">
+      <span class="status-label">Tool</span>
+      <span class="status-value" id="stool" style="color:var(--accent);">Navigate</span>
+    </div>
+  </div>
+
+  <!-- COMPASS -->
+  <div id="compass-container">
+    <canvas id="compass-canvas" width="280" height="280"></canvas>
+    <div id="compass-bearing">--</div>
+  </div>
+
+  <!-- SCALE BAR -->
+  <div id="scale-bar-container">
+    <div id="scale-bar-line" style="width:100px;"></div>
+    <div id="scale-bar-label">--</div>
+  </div>
+
+  <!-- CROSSHAIR -->
+  <div id="crosshair"></div>
+
+  <!-- ROCK INFO POPUP -->
+  <div id="rock-popup">
+    <button class="popup-close" id="popup-close">&times;</button>
+    <div class="popup-title">
+      <div class="popup-swatch" id="popup-swatch"></div>
+      <span id="popup-name">--</span>
+    </div>
+    <div class="popup-grid" id="popup-grid"></div>
+  </div>
+
+  <!-- EXTERNAL LIBS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <!-- APPLICATION -->
+  <script type="module">
+    // ================================================================
+    //  THREE.JS IMPORTS
+    // ================================================================
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js';
+    import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/controls/OrbitControls.js';
+
+    // ================================================================
+    //  SIMPLEX NOISE (2D)
+    //  Compact implementation based on Stefan Gustavson's algorithm
+    // ================================================================
+    function buildPerm(seed) {
+      const p = new Uint8Array(512);
+      const src = new Uint8Array(256);
+      for (let i = 0; i < 256; i++) src[i] = i;
+      let s = seed | 0 || 1;
+      for (let i = 255; i > 0; i--) {
+        s = (s * 16807 + 0) % 2147483647;
+        const j = s % (i + 1);
+        [src[i], src[j]] = [src[j], src[i]];
+      }
+      for (let i = 0; i < 256; i++) p[i] = p[i + 256] = src[i];
+      return p;
+    }
+
+    function createNoise2D(seed = 42) {
+      const perm = buildPerm(seed);
+      const G2 = [
+        [1,1],[-1,1],[1,-1],[-1,-1],
+        [1,0],[-1,0],[0,1],[0,-1],
+      ];
+      const F2 = 0.5 * (Math.sqrt(3) - 1);
+      const G2F = (3.0 - Math.sqrt(3)) / 6.0;
+
+      return function(xin, yin) {
+        const s = (xin + yin) * F2;
+        const i = Math.floor(xin + s);
+        const j = Math.floor(yin + s);
+        const t = (i + j) * G2F;
+        const x0 = xin - (i - t);
+        const y0 = yin - (j - t);
+        const i1 = x0 > y0 ? 1 : 0;
+        const j1 = x0 > y0 ? 0 : 1;
+        const x1 = x0 - i1 + G2F;
+        const y1 = y0 - j1 + G2F;
+        const x2 = x0 - 1.0 + 2.0 * G2F;
+        const y2 = y0 - 1.0 + 2.0 * G2F;
+        const ii = i & 255, jj = j & 255;
+        const dot = (gi, gx, gy) => { const g = G2[gi % 8]; return g[0]*gx + g[1]*gy; };
+        let n0 = 0, n1 = 0, n2 = 0;
+        let t0 = 0.5 - x0*x0 - y0*y0;
+        if (t0 >= 0) { t0 *= t0; n0 = t0 * t0 * dot(perm[ii + perm[jj]], x0, y0); }
+        let t1 = 0.5 - x1*x1 - y1*y1;
+        if (t1 >= 0) { t1 *= t1; n1 = t1 * t1 * dot(perm[ii + i1 + perm[jj + j1]], x1, y1); }
+        let t2 = 0.5 - x2*x2 - y2*y2;
+        if (t2 >= 0) { t2 *= t2; n2 = t2 * t2 * dot(perm[ii + 1 + perm[jj + 1]], x2, y2); }
+        return 70.0 * (n0 + n1 + n2);
+      };
+    }
+
+    // Fractal Brownian Motion
+    function fbm(noise, x, z, octaves = 6, lac = 2.0, gain = 0.5) {
+      let sum = 0, amp = 1, freq = 1, maxAmp = 0;
+      for (let o = 0; o < octaves; o++) {
+        sum += noise(x * freq, z * freq) * amp;
+        maxAmp += amp; amp *= gain; freq *= lac;
+      }
+      return sum / maxAmp;
+    }
+
+    // Ridge noise
+    function ridgeNoise(noise, x, z, octaves = 4) {
+      let sum = 0, amp = 1, freq = 1;
+      for (let o = 0; o < octaves; o++) {
+        let n = noise(x * freq, z * freq);
+        n = 1.0 - Math.abs(n);
+        n *= n;
+        sum += n * amp; amp *= 0.5; freq *= 2.0;
+      }
+      return sum;
+    }
+
+    // ================================================================
+    //  GEOLOGICAL DATA
+    // ================================================================
+    const WATER_LEVEL = 42;
+    const TERRAIN_SIZE = 2000; // 2km x 2km
+    const SEGMENTS = 256;
+
+    const LAYERS = [
+      {
+        name: 'Granite Gneiss',
+        baseElevation: 0,
+        color: '#8B7D7B',
+        hex: 0x8B7D7B,
+        minerals: ['Quartz', 'K-Feldspar', 'Plagioclase', 'Biotite'],
+        characteristics: 'Coarse-grained metamorphic basement rock with gneissic banding',
+        grainSize: 'Coarse (2-5 mm)',
+        texture: 'Gneissic banding',
+        fossils: 'None',
+        age: 'Precambrian (~1.8 Ga)',
+      },
+      {
+        name: 'Dolomitic Limestone',
+        baseElevation: 28,
+        color: '#C8B898',
+        hex: 0xC8B898,
+        minerals: ['Dolomite', 'Calcite', 'Minor Quartz'],
+        characteristics: 'Fine-grained carbonate rock with dolomite replacement textures',
+        grainSize: 'Fine (0.1-0.5 mm)',
+        texture: 'Crystalline, sucrosic',
+        fossils: 'Coral fragments, Stromatolites',
+        age: 'Cambrian (~510 Ma)',
+      },
+      {
+        name: 'Sandstone & Shale',
+        baseElevation: 55,
+        color: '#B8A06E',
+        hex: 0xB8A06E,
+        minerals: ['Quartz', 'Feldspar', 'Clay minerals', 'Mica'],
+        characteristics: 'Alternating sandstone and shale beds with cross-bedding',
+        grainSize: 'Fine to Medium',
+        texture: 'Clastic, laminated',
+        fossils: 'Trilobites, Brachiopods',
+        age: 'Ordovician (~470 Ma)',
+      },
+      {
+        name: 'Schist',
+        baseElevation: 120,
+        color: '#607070',
+        hex: 0x607070,
+        minerals: ['Muscovite', 'Biotite', 'Garnet', 'Quartz'],
+        characteristics: 'Foliated metamorphic rock with visible mica flakes and garnet porphyroblasts',
+        grainSize: 'Medium to Coarse',
+        texture: 'Schistose foliation',
+        fossils: 'None (metamorphosed)',
+        age: 'Silurian (~430 Ma)',
+      },
+      {
+        name: 'Limestone',
+        baseElevation: 142,
+        color: '#A09080',
+        hex: 0xA09080,
+        minerals: ['Calcite', 'Aragonite', 'Minor Clay'],
+        characteristics: 'Fossiliferous limestone with well-preserved marine fauna',
+        grainSize: 'Fine to Medium',
+        texture: 'Bioclastic, micritic',
+        fossils: 'Ammonites, Crinoids, Brachiopods',
+        age: 'Devonian (~380 Ma)',
+      },
+      {
+        name: 'Alluvium & Topsoil',
+        baseElevation: 172,
+        color: '#6D8B50',
+        hex: 0x6D8B50,
+        minerals: ['Clay', 'Quartz sand', 'Organic matter'],
+        characteristics: 'Unconsolidated surface material with vegetation cover',
+        grainSize: 'Variable',
+        texture: 'Unconsolidated',
+        fossils: 'Plant debris, recent',
+        age: 'Quaternary (<2 Ma)',
+      },
+    ];
+
+    function getLayerAtElevation(y) {
+      for (let i = LAYERS.length - 1; i >= 0; i--) {
+        if (y >= LAYERS[i].baseElevation) return LAYERS[i];
+      }
+      return LAYERS[0];
+    }
+
+    // ================================================================
+    //  SCENE SETUP
+    // ================================================================
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    document.getElementById('viewport').appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 20000);
+    camera.position.set(-400, 350, 700);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.maxDistance = 5000;
+    controls.minDistance = 20;
+    controls.maxPolarAngle = Math.PI * 0.48;
+    controls.target.set(0, 80, 0);
+
+    // ================================================================
+    //  LIGHTING
+    // ================================================================
+    const ambientLight = new THREE.HemisphereLight(0x87CEEB, 0x4E6B3C, 0.5);
+    scene.add(ambientLight);
+
+    const sunLight = new THREE.DirectionalLight(0xFFF4E0, 1.4);
+    sunLight.position.set(400, 600, 300);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(2048, 2048);
+    sunLight.shadow.camera.near = 1;
+    sunLight.shadow.camera.far = 3000;
+    sunLight.shadow.camera.left = -1200;
+    sunLight.shadow.camera.right = 1200;
+    sunLight.shadow.camera.top = 1200;
+    sunLight.shadow.camera.bottom = -1200;
+    sunLight.shadow.bias = -0.0005;
+    scene.add(sunLight);
+
+    const fillLight = new THREE.DirectionalLight(0x8FBBDA, 0.3);
+    fillLight.position.set(-300, 200, -400);
+    scene.add(fillLight);
+
+    // ================================================================
+    //  SKY DOME
+    // ================================================================
+    const skyGeo = new THREE.SphereGeometry(8000, 32, 32);
+    const skyMat = new THREE.ShaderMaterial({
+      uniforms: {
+        topColor:    { value: new THREE.Color(0x0055AA) },
+        bottomColor: { value: new THREE.Color(0xC8D8E8) },
+        offset:      { value: 20 },
+        exponent:    { value: 0.5 },
+      },
+      vertexShader: `
+        varying vec3 vWorldPos;
+        void main() {
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vWorldPos = wp.xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `
+        uniform vec3 topColor;
+        uniform vec3 bottomColor;
+        uniform float offset;
+        uniform float exponent;
+        varying vec3 vWorldPos;
+        void main() {
+          float h = normalize(vWorldPos + offset).y;
+          gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
+        }`,
+      side: THREE.BackSide,
+      depthWrite: false,
+    });
+    scene.add(new THREE.Mesh(skyGeo, skyMat));
+
+    // Fog
+    scene.fog = new THREE.FogExp2(0xC8D8E8, 0.00028);
+
+    // ================================================================
+    //  TERRAIN GENERATION
+    // ================================================================
+    const noise2D = createNoise2D(42);
+    const noise2D_b = createNoise2D(137);
+    const heightMap = new Float32Array((SEGMENTS + 1) * (SEGMENTS + 1));
+
+    function generateHeight(x, z) {
+      const base = fbm(noise2D, x * 0.0005, z * 0.0005, 5) * 65;
+      const ridges = ridgeNoise(noise2D_b, x * 0.0007, z * 0.0007, 3) * 28;
+      const detail = fbm(noise2D, x * 0.004, z * 0.004, 3) * 7;
+      const valley = Math.abs(noise2D(x * 0.0012, z * 0.0012)) * 18;
+      return Math.max(105 + base + ridges * 0.5 + detail - valley, 20);
+    }
+
+    function getTerrainHeight(wx, wz) {
+      const gx = (wx + TERRAIN_SIZE/2) / TERRAIN_SIZE * SEGMENTS;
+      const gz = (wz + TERRAIN_SIZE/2) / TERRAIN_SIZE * SEGMENTS;
+      const x0 = Math.max(0, Math.min(SEGMENTS - 1, Math.floor(gx)));
+      const z0 = Math.max(0, Math.min(SEGMENTS - 1, Math.floor(gz)));
+      const x1 = Math.min(x0 + 1, SEGMENTS);
+      const z1 = Math.min(z0 + 1, SEGMENTS);
+      const fx = gx - x0, fz = gz - z0;
+      const s = SEGMENTS + 1;
+      const h00 = heightMap[z0*s+x0], h10 = heightMap[z0*s+x1];
+      const h01 = heightMap[z1*s+x0], h11 = heightMap[z1*s+x1];
+      return h00*(1-fx)*(1-fz) + h10*fx*(1-fz) + h01*(1-fx)*fz + h11*fx*fz;
+    }
+
+    function getLayerAtPosition(wx, elev, wz) {
+      const perturb = noise2D(wx * 0.0003, wz * 0.0003) * 14;
+      return getLayerAtElevation(elev - perturb);
+    }
+
+    function buildTerrain() {
+      const geo = new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, SEGMENTS, SEGMENTS);
+      geo.rotateX(-Math.PI / 2);
+      const pos = geo.attributes.position;
+      const colors = new Float32Array(pos.count * 3);
+      const s = SEGMENTS + 1;
+
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i), z = pos.getZ(i);
+        const h = generateHeight(x, z);
+        pos.setY(i, h);
+
+        // Store in heightmap
+        const gx = Math.round((x + TERRAIN_SIZE/2) / TERRAIN_SIZE * SEGMENTS);
+        const gz = Math.round((z + TERRAIN_SIZE/2) / TERRAIN_SIZE * SEGMENTS);
+        if (gx >= 0 && gx <= SEGMENTS && gz >= 0 && gz <= SEGMENTS) {
+          heightMap[gz * s + gx] = h;
+        }
+
+        const layer = getLayerAtPosition(x, h, z);
+        const c = new THREE.Color(layer.hex);
+        // Add per-vertex noise variation
+        const nv = noise2D(x * 0.015, z * 0.015) * 0.08;
+        const nv2 = noise2D(x * 0.06 + 100, z * 0.06 + 100) * 0.04;
+        c.offsetHSL(nv2 * 0.1, nv * 0.2, nv + nv2);
+        colors[i*3] = c.r; colors[i*3+1] = c.g; colors[i*3+2] = c.b;
+      }
+
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      pos.needsUpdate = true;
+      geo.computeVertexNormals();
+
+      const mat = new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.82,
+        metalness: 0.02,
+        flatShading: false,
+        envMapIntensity: 0.4,
+      });
+
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      return mesh;
+    }
+
+    // Progress: 40%
+    document.getElementById('loading-fill').style.width = '40%';
+
+    const terrain = buildTerrain();
+    scene.add(terrain);
+
+    // Progress: 70%
+    document.getElementById('loading-fill').style.width = '70%';
+
+    // ================================================================
+    //  WATER PLANE
+    // ================================================================
+    const waterGeo = new THREE.PlaneGeometry(TERRAIN_SIZE * 1.5, TERRAIN_SIZE * 1.5, 128, 128);
+    waterGeo.rotateX(-Math.PI / 2);
+    const waterMat = new THREE.MeshStandardMaterial({
+      color: 0x1A6FA0,
+      transparent: true,
+      opacity: 0.65,
+      roughness: 0.08,
+      metalness: 0.35,
+      side: THREE.DoubleSide,
+    });
+    const waterMesh = new THREE.Mesh(waterGeo, waterMat);
+    waterMesh.position.y = WATER_LEVEL;
+    waterMesh.receiveShadow = true;
+    scene.add(waterMesh);
+
+    // Animate water slightly
+    const waterPositions = waterGeo.attributes.position;
+    const waterBaseY = new Float32Array(waterPositions.count);
+    for (let i = 0; i < waterPositions.count; i++) waterBaseY[i] = waterPositions.getY(i);
+
+    // ================================================================
+    //  HOVER MARKER
+    // ================================================================
+    const ringGeo = new THREE.RingGeometry(4, 6, 32);
+    ringGeo.rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0x58a6ff, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+    const hoverMarker = new THREE.Mesh(ringGeo, ringMat);
+    hoverMarker.visible = false;
+    scene.add(hoverMarker);
+
+    // ================================================================
+    //  MEASURE & DRILL MARKERS CONTAINER
+    // ================================================================
+    const markersGroup = new THREE.Group();
+    scene.add(markersGroup);
+
+    // ================================================================
+    //  RAYCASTER & MOUSE
+    // ================================================================
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    function updateMouse(e) {
+      mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    }
+
+    function raycastTerrain() {
+      raycaster.setFromCamera(mouse, camera);
+      return raycaster.intersectObject(terrain);
+    }
+
+    // ================================================================
+    //  UI STATE
+    // ================================================================
+    let activeTool = 'navigate';
+    let activePanel = null;
+    const measureState = { points: [], markers: [], line: null };
+    const drillMarkers = [];
+
+    const toolButtons = document.querySelectorAll('.sb-btn[data-tool]');
+    const panelButtons = document.querySelectorAll('.sb-btn[data-panel]');
+    const panel = document.getElementById('panel');
+
+    function setActiveTool(tool) {
+      activeTool = tool;
+      toolButtons.forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
+      document.getElementById('stool').textContent = tool.charAt(0).toUpperCase() + tool.slice(1);
+      controls.enabled = (tool === 'navigate');
+      renderer.domElement.style.cursor = tool === 'navigate' ? 'grab' : 'crosshair';
+      // Clear measure state when switching away
+      if (tool !== 'measure') clearMeasure();
+    }
+
+    function togglePanel(name) {
+      if (activePanel === name) {
+        panel.classList.remove('open');
+        activePanel = null;
+        panelButtons.forEach(b => b.classList.remove('active'));
+      } else {
+        activePanel = name;
+        panel.classList.add('open');
+        document.querySelectorAll('.panel-page').forEach(p => p.classList.toggle('active', p.id === 'page-' + name));
+        panelButtons.forEach(b => b.classList.toggle('active', b.dataset.panel === name));
+      }
+    }
+
+    toolButtons.forEach(b => b.addEventListener('click', () => setActiveTool(b.dataset.tool)));
+    panelButtons.forEach(b => b.addEventListener('click', () => togglePanel(b.dataset.panel)));
+
+    // ================================================================
+    //  BUILD LEGEND
+    // ================================================================
+    const legendList = document.getElementById('legend-list');
+    [...LAYERS].reverse().forEach(layer => {
+      const div = document.createElement('div');
+      div.className = 'legend-item';
+      div.innerHTML = `
+        <div class="legend-swatch" style="background:${layer.color};"></div>
+        <div class="legend-info">
+          <div class="legend-name">${layer.name}</div>
+          <div class="legend-elev">${layer.baseElevation}m+ &middot; ${layer.age}</div>
+        </div>`;
+      div.addEventListener('click', () => showRockPopup(layer));
+      legendList.appendChild(div);
+    });
+
+    // ================================================================
+    //  ROCK INFO POPUP
+    // ================================================================
+    const rockPopup = document.getElementById('rock-popup');
+    document.getElementById('popup-close').addEventListener('click', () => rockPopup.classList.remove('visible'));
+
+    function showRockPopup(layer) {
+      document.getElementById('popup-name').textContent = layer.name;
+      document.getElementById('popup-swatch').style.background = layer.color;
+      const grid = document.getElementById('popup-grid');
+      grid.innerHTML = '';
+      const fields = [
+        ['Minerals', layer.minerals.join(', ')],
+        ['Grain Size', layer.grainSize],
+        ['Texture', layer.texture],
+        ['Fossils', layer.fossils || 'None'],
+        ['Age', layer.age],
+        ['Characteristics', layer.characteristics],
+      ];
+      fields.forEach(([label, value]) => {
+        grid.innerHTML += `<div><div class="popup-field-label">${label}</div><div class="popup-field-value">${value}</div></div>`;
+      });
+      rockPopup.classList.add('visible');
+    }
+
+    // ================================================================
+    //  MOUSE MOVE: Hover info + status bar
+    // ================================================================
+    renderer.domElement.addEventListener('mousemove', (e) => {
+      updateMouse(e);
+      const hits = raycastTerrain();
+      if (hits.length > 0) {
+        const p = hits[0].point;
+        const layer = getLayerAtPosition(p.x, p.y, p.z);
+        document.getElementById('sx').textContent = p.x.toFixed(1) + 'm';
+        document.getElementById('sz').textContent = p.z.toFixed(1) + 'm';
+        document.getElementById('selev').textContent = p.y.toFixed(1) + 'm';
+        document.getElementById('srock').textContent = layer.name;
+        hoverMarker.position.set(p.x, p.y + 0.8, p.z);
+        hoverMarker.visible = (activeTool !== 'navigate');
+      } else {
+        hoverMarker.visible = false;
+      }
+    });
+
+    // ================================================================
+    //  CLICK HANDLER
+    // ================================================================
+    renderer.domElement.addEventListener('click', (e) => {
+      if (activeTool === 'navigate') return;
+      updateMouse(e);
+      const hits = raycastTerrain();
+      if (hits.length === 0) return;
+      const point = hits[0].point;
+
+      switch (activeTool) {
+        case 'identify': handleIdentify(point); break;
+        case 'drill': handleDrill(point); break;
+        case 'measure': handleMeasure(point); break;
+      }
+    });
+
+    // ================================================================
+    //  IDENTIFY TOOL
+    // ================================================================
+    function handleIdentify(point) {
+      const layer = getLayerAtPosition(point.x, point.y, point.z);
+      showRockPopup(layer);
+    }
+
+    // ================================================================
+    //  DRILL TOOL
+    // ================================================================
+    function handleDrill(point) {
+      const surfaceY = point.y;
+      const results = [];
+      const step = 0.5;
+      let depth = 0;
+
+      while (true) {
+        const elev = surfaceY - depth;
+        if (elev < 0) break;
+        const layer = getLayerAtPosition(point.x, elev, point.z);
+        if (results.length === 0 || results[results.length - 1].layer.name !== layer.name) {
+          results.push({ layer, startDepth: depth, endDepth: depth });
+        } else {
+          results[results.length - 1].endDepth = depth;
+        }
+        depth += step;
+      }
+
+      // Place drillhole marker
+      const markerGeo = new THREE.CylinderGeometry(2, 2, 6, 16);
+      const markerMat = new THREE.MeshStandardMaterial({ color: 0xf85149, roughness: 0.4 });
+      const marker = new THREE.Mesh(markerGeo, markerMat);
+      marker.position.set(point.x, surfaceY + 3, point.z);
+      markersGroup.add(marker);
+      drillMarkers.push(marker);
+
+      // Display drill core in panel
+      displayDrillCore(results, point, surfaceY);
+      togglePanel('drill');
+    }
+
+    function displayDrillCore(results, pos, surfaceY) {
+      const totalDepth = results.length > 0 ? results[results.length - 1].endDepth : 0;
+      document.getElementById('drill-info').innerHTML =
+        `Location: (${pos.x.toFixed(0)}, ${pos.z.toFixed(0)}) &middot; Surface: ${surfaceY.toFixed(1)}m &middot; Total depth: ${totalDepth.toFixed(1)}m`;
+
+      const container = document.getElementById('drill-core-content');
+      container.innerHTML = '';
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'core-wrapper';
+
+      // Depth axis
+      const depthAxis = document.createElement('div');
+      depthAxis.className = 'core-depth-axis';
+      depthAxis.style.height = Math.max(200, totalDepth * 2) + 'px';
+
+      // Core column
+      const column = document.createElement('div');
+      column.className = 'core-column';
+
+      // Log
+      const log = document.createElement('div');
+      log.className = 'core-log';
+
+      results.forEach((r, idx) => {
+        const thickness = r.endDepth - r.startDepth;
+        const h = Math.max(20, thickness * 2);
+
+        // Depth tick
+        const tick = document.createElement('div');
+        tick.className = 'core-depth-tick';
+        tick.style.top = (r.startDepth * 2) + 'px';
+        tick.textContent = r.startDepth.toFixed(0) + 'm';
+        depthAxis.appendChild(tick);
+
+        // Core segment
+        const seg = document.createElement('div');
+        seg.className = 'core-segment';
+        seg.style.height = h + 'px';
+        seg.style.background = r.layer.color;
+        seg.title = r.layer.name;
+        seg.addEventListener('click', () => showRockPopup(r.layer));
+        column.appendChild(seg);
+
+        // Log entry
+        const entry = document.createElement('div');
+        entry.className = 'core-log-entry';
+        entry.style.borderColor = r.layer.color;
+        entry.style.minHeight = h + 'px';
+        entry.innerHTML = `
+          <div class="core-log-name">${r.layer.name}</div>
+          <div class="core-log-detail">
+            ${thickness.toFixed(1)}m &middot; ${r.layer.grainSize}<br>
+            ${r.layer.minerals.slice(0, 3).join(', ')}
+          </div>`;
+        entry.addEventListener('click', () => showRockPopup(r.layer));
+        log.appendChild(entry);
+      });
+
+      // Final depth tick
+      if (results.length > 0) {
+        const lastTick = document.createElement('div');
+        lastTick.className = 'core-depth-tick';
+        lastTick.style.top = (totalDepth * 2) + 'px';
+        lastTick.textContent = totalDepth.toFixed(0) + 'm';
+        depthAxis.appendChild(lastTick);
+      }
+
+      wrapper.appendChild(depthAxis);
+      wrapper.appendChild(column);
+      wrapper.appendChild(log);
+      container.appendChild(wrapper);
+    }
+
+    // ================================================================
+    //  MEASURE TOOL
+    // ================================================================
+    function handleMeasure(point) {
+      measureState.points.push(point.clone());
+
+      // Place marker
+      const sphere = new THREE.Mesh(
+        new THREE.SphereGeometry(3, 16, 16),
+        new THREE.MeshStandardMaterial({ color: 0xFF6B6B, roughness: 0.3, emissive: 0x441111 })
+      );
+      sphere.position.copy(point); sphere.position.y += 3;
+      markersGroup.add(sphere);
+      measureState.markers.push(sphere);
+
+      if (measureState.points.length === 2) {
+        const [a, b] = measureState.points;
+        const dist = a.distanceTo(b);
+        const horizDist = Math.sqrt((b.x - a.x) ** 2 + (b.z - a.z) ** 2);
+        const elevChange = b.y - a.y;
+        const bearing = (Math.atan2(b.x - a.x, b.z - a.z) * 180 / Math.PI + 360) % 360;
+        const slope = Math.atan2(Math.abs(elevChange), horizDist) * 180 / Math.PI;
+
+        // Draw line
+        const lineGeo = new THREE.BufferGeometry().setFromPoints([
+          a.clone().setY(a.y + 2), b.clone().setY(b.y + 2)
+        ]);
+        const lineMat = new THREE.LineBasicMaterial({ color: 0xFF6B6B });
+        const line = new THREE.Line(lineGeo, lineMat);
+        markersGroup.add(line);
+        measureState.line = line;
+
+        // Show results
+        const content = document.getElementById('measure-content');
+        content.innerHTML = `
+          <div class="measure-result">
+            <div class="measure-value">${dist.toFixed(1)} m</div>
+            <div class="measure-label">3D Distance</div>
+          </div>
+          <div class="measure-result">
+            <div class="measure-value">${horizDist.toFixed(1)} m</div>
+            <div class="measure-label">Horizontal Distance</div>
+          </div>
+          <div class="measure-result">
+            <div class="measure-value">${elevChange >= 0 ? '+' : ''}${elevChange.toFixed(1)} m</div>
+            <div class="measure-label">Elevation Change</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div class="measure-result">
+              <div class="measure-value">${bearing.toFixed(1)}°</div>
+              <div class="measure-label">Bearing</div>
+            </div>
+            <div class="measure-result">
+              <div class="measure-value">${slope.toFixed(1)}°</div>
+              <div class="measure-label">Slope</div>
+            </div>
+          </div>
+          <button class="btn btn-outline btn-block btn-sm" id="btn-clear-measure" style="margin-top:10px;">Clear Measurement</button>`;
+        document.getElementById('btn-clear-measure').addEventListener('click', clearMeasure);
+        togglePanel('measure');
+
+        // Reset for next measurement
+        measureState.points = [];
+      }
+    }
+
+    function clearMeasure() {
+      measureState.markers.forEach(m => { markersGroup.remove(m); m.geometry.dispose(); });
+      if (measureState.line) { markersGroup.remove(measureState.line); measureState.line.geometry.dispose(); }
+      measureState.markers = [];
+      measureState.line = null;
+      measureState.points = [];
+    }
+
+    // ================================================================
+    //  COMPASS
+    // ================================================================
+    const compassCanvas = document.getElementById('compass-canvas');
+    const cCtx = compassCanvas.getContext('2d');
+
+    function drawCompass() {
+      const w = compassCanvas.width, h = compassCanvas.height;
+      const cx = w / 2, cy = h / 2, r = cx - 16;
+      const dir = new THREE.Vector3();
+      camera.getWorldDirection(dir);
+      let bearing = Math.atan2(dir.x, dir.z) * 180 / Math.PI;
+      bearing = (bearing + 360) % 360;
+
+      cCtx.clearRect(0, 0, w, h);
+
+      // Background
+      cCtx.beginPath();
+      cCtx.arc(cx, cy, r + 8, 0, Math.PI * 2);
+      cCtx.fillStyle = 'rgba(13,17,23,0.88)';
+      cCtx.fill();
+      cCtx.strokeStyle = 'rgba(88,166,255,0.2)';
+      cCtx.lineWidth = 1;
+      cCtx.stroke();
+
+      // Inner ring
+      cCtx.beginPath();
+      cCtx.arc(cx, cy, r, 0, Math.PI * 2);
+      cCtx.strokeStyle = 'rgba(255,255,255,0.15)';
+      cCtx.lineWidth = 1;
+      cCtx.stroke();
+
+      // Tick marks & labels (rotate by bearing)
+      cCtx.save();
+      cCtx.translate(cx, cy);
+      cCtx.rotate(-bearing * Math.PI / 180);
+
+      for (let deg = 0; deg < 360; deg += 2) {
+        const angle = (deg - 90) * Math.PI / 180;
+        const isMajor = deg % 90 === 0;
+        const isMed = deg % 30 === 0;
+        const isMinor = deg % 10 === 0;
+        const inner = isMajor ? r - 18 : isMed ? r - 12 : isMinor ? r - 8 : r - 5;
+        const outer = r - 1;
+
+        cCtx.beginPath();
+        cCtx.moveTo(inner * Math.cos(angle), inner * Math.sin(angle));
+        cCtx.lineTo(outer * Math.cos(angle), outer * Math.sin(angle));
+        cCtx.strokeStyle = isMajor ? '#fff' : isMed ? 'rgba(255,255,255,0.5)' : isMinor ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.1)';
+        cCtx.lineWidth = isMajor ? 2 : 1;
+        cCtx.stroke();
+      }
+
+      // Cardinal labels
+      const cardinals = [
+        { l: 'N', d: 0, c: '#f85149' }, { l: 'E', d: 90, c: '#e6edf3' },
+        { l: 'S', d: 180, c: '#e6edf3' }, { l: 'W', d: 270, c: '#e6edf3' },
+      ];
+      cCtx.font = 'bold 16px Inter, sans-serif';
+      cCtx.textAlign = 'center';
+      cCtx.textBaseline = 'middle';
+      cardinals.forEach(({ l, d, c }) => {
+        const a = (d - 90) * Math.PI / 180;
+        const lr = r - 30;
+        cCtx.fillStyle = c;
+        cCtx.fillText(l, lr * Math.cos(a), lr * Math.sin(a));
+      });
+
+      // Degree numbers
+      cCtx.font = '10px JetBrains Mono, monospace';
+      cCtx.fillStyle = 'rgba(255,255,255,0.4)';
+      for (let deg = 0; deg < 360; deg += 30) {
+        if (deg % 90 === 0) continue;
+        const a = (deg - 90) * Math.PI / 180;
+        const lr = r - 30;
+        cCtx.fillText(deg.toString(), lr * Math.cos(a), lr * Math.sin(a));
+      }
+
+      cCtx.restore();
+
+      // Fixed needle (points up = camera direction)
+      cCtx.save();
+      cCtx.translate(cx, cy);
+      // North arrow (red)
+      cCtx.beginPath();
+      cCtx.moveTo(0, -(r - 42));
+      cCtx.lineTo(-5, 0);
+      cCtx.lineTo(5, 0);
+      cCtx.closePath();
+      cCtx.fillStyle = '#f85149';
+      cCtx.fill();
+      // South arrow (white)
+      cCtx.beginPath();
+      cCtx.moveTo(0, (r - 42));
+      cCtx.lineTo(-5, 0);
+      cCtx.lineTo(5, 0);
+      cCtx.closePath();
+      cCtx.fillStyle = 'rgba(255,255,255,0.4)';
+      cCtx.fill();
+      // Center
+      cCtx.beginPath();
+      cCtx.arc(0, 0, 4, 0, Math.PI * 2);
+      cCtx.fillStyle = '#58a6ff';
+      cCtx.fill();
+      cCtx.restore();
+
+      // Update bearing text
+      const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+      const dirLabel = dirs[Math.round(bearing / 22.5) % 16];
+      document.getElementById('compass-bearing').textContent =
+        `${Math.round(bearing)}° ${dirLabel}`;
+    }
+
+    // ================================================================
+    //  SCALE BAR
+    // ================================================================
+    function updateScaleBar() {
+      const fov = camera.fov * Math.PI / 180;
+      const dist = camera.position.distanceTo(controls.target);
+      const worldPerPixel = 2 * Math.tan(fov / 2) * dist / renderer.domElement.clientHeight;
+      const targetPixels = 120;
+      let worldDist = worldPerPixel * targetPixels;
+
+      // Round to nice number
+      const niceSteps = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
+      let nice = niceSteps[0];
+      for (const s of niceSteps) { if (s <= worldDist) nice = s; }
+      const actualPixels = nice / worldPerPixel;
+
+      document.getElementById('scale-bar-line').style.width = actualPixels + 'px';
+      document.getElementById('scale-bar-label').textContent = nice >= 1000 ? (nice/1000).toFixed(1) + ' km' : nice + ' m';
+    }
+
+    // ================================================================
+    //  NOTEBOOK
+    // ================================================================
+    document.getElementById('btn-stamp').addEventListener('click', () => {
+      const ta = document.getElementById('notebook-text');
+      const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
+      const bearing = ((Math.atan2(dir.x, dir.z) * 180 / Math.PI) + 360) % 360;
+      const stamp = `\n📍 [${camera.position.x.toFixed(0)}, ${camera.position.y.toFixed(0)}, ${camera.position.z.toFixed(0)}] Bearing: ${bearing.toFixed(0)}°\n`;
+      ta.value += stamp;
+      ta.scrollTop = ta.scrollHeight;
+    });
+
+    document.getElementById('btn-timestamp').addEventListener('click', () => {
+      const ta = document.getElementById('notebook-text');
+      ta.value += `\n🕐 ${new Date().toLocaleString()}\n`;
+      ta.scrollTop = ta.scrollHeight;
+    });
+
+    document.getElementById('btn-export-pdf').addEventListener('click', () => {
+      const text = document.getElementById('notebook-text').value;
+      if (!text.trim()) { alert('Notebook is empty.'); return; }
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.text('Field Geology Notes', 15, 20);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.text(new Date().toLocaleString(), 15, 28);
+      doc.setFontSize(11);
+      const lines = doc.splitTextToSize(text, 180);
+      doc.text(lines, 15, 38);
+      doc.save('FieldNotes_' + Date.now() + '.pdf');
+    });
+
+    // ================================================================
+    //  SETTINGS
+    // ================================================================
+    document.getElementById('btn-apply-settings').addEventListener('click', () => {
+      const waterLvl = parseFloat(document.getElementById('setting-water').value);
+      const fogD = parseFloat(document.getElementById('setting-fog').value);
+      const sunEl = parseFloat(document.getElementById('setting-sun').value);
+
+      if (!isNaN(waterLvl)) waterMesh.position.y = waterLvl;
+      if (!isNaN(fogD)) scene.fog.density = fogD;
+      if (!isNaN(sunEl)) {
+        const rad = sunEl * Math.PI / 180;
+        sunLight.position.set(400 * Math.cos(rad * 0.3), 600 * Math.sin(rad), 300 * Math.cos(rad * 0.5));
+      }
+    });
+
+    // ================================================================
+    //  KEYBOARD SHORTCUTS
+    // ================================================================
+    document.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+      switch (e.key) {
+        case '1': setActiveTool('navigate'); break;
+        case '2': setActiveTool('identify'); break;
+        case '3': setActiveTool('drill'); break;
+        case '4': setActiveTool('measure'); break;
+        case 'l': case 'L': togglePanel('legend'); break;
+        case 'n': case 'N': togglePanel('notebook'); break;
+        case 'Escape':
+          rockPopup.classList.remove('visible');
+          if (activePanel) { panel.classList.remove('open'); activePanel = null; panelButtons.forEach(b => b.classList.remove('active')); }
+          break;
+      }
+    });
+
+    // ================================================================
+    //  WINDOW RESIZE
+    // ================================================================
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // ================================================================
+    //  ANIMATION LOOP
+    // ================================================================
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+
+      controls.update();
+
+      // Animate water
+      for (let i = 0; i < waterPositions.count; i++) {
+        const x = waterPositions.getX(i);
+        const z = waterPositions.getZ(i);
+        waterPositions.setY(i, waterBaseY[i] + Math.sin(x * 0.02 + t * 0.8) * 0.3 + Math.cos(z * 0.015 + t * 0.6) * 0.25);
+      }
+      waterPositions.needsUpdate = true;
+
+      drawCompass();
+      updateScaleBar();
+
+      renderer.render(scene, camera);
+    }
+
+    // ================================================================
+    //  INIT
+    // ================================================================
+    document.getElementById('loading-fill').style.width = '100%';
+    setTimeout(() => document.getElementById('loading').classList.add('done'), 400);
+
+    animate();
+    console.log('%c🪨 Structural Geology Field Mapping Simulator v2.0', 'font-size:14px;font-weight:bold;color:#58a6ff;');
+    console.log('Keyboard: 1-Navigate  2-Identify  3-Drill  4-Measure  L-Legend  N-Notebook  Esc-Close');
+  </script>
+</body>
+</html>
