@@ -424,11 +424,10 @@ export class SceneManager {
           this._joystickChangeCbs.forEach((cb) => cb({ ...this._joystick }));
         }
       }
-      // Begin pinch only when 2+ fingers are both in the right zone.
-      // A left-zone joystick may coexist with a right-zone orbit/pinch touch.
-      const rightStarts = [...e.touches].filter(t => getZone(t.clientX) === 'right');
-      if (rightStarts.length >= 2) {
-        const a = rightStarts[0], b = rightStarts[1];
+      // Begin pinch when 2+ fingers are touching anywhere on screen.
+      // The joystick (left zone) can coexist with pinch.
+      if (e.touches.length >= 2) {
+        const a = e.touches[0], b = e.touches[1];
         const dxp = a.clientX - b.clientX, dyp = a.clientY - b.clientY;
         this._pinchDist = Math.sqrt(dxp * dxp + dyp * dyp);
       }
@@ -438,17 +437,15 @@ export class SceneManager {
       e.preventDefault();
       e.stopPropagation();
 
-      // ── Pinch zoom: only when 2+ right-zone fingers are active ─────
-      // Left-zone joystick and right-zone orbit/pinch are independent and
-      // can run simultaneously (one thumb each side).
-      const rightMoveTouches = [...e.touches].filter(t => {
-        const s = activeTouches.get(t.identifier);
-        return s && s.zone === 'right';
-      });
-      const isPinching = rightMoveTouches.length >= 2;
+      // ── Pinch zoom: when 2+ fingers are active anywhere ─────────
+      // Left-zone joystick and right-zone orbit are independent and
+      // can run simultaneously (one thumb each side). Pinch spans
+      // any two fingers regardless of zone.
+      const allTouches = [...e.touches];
+      const isPinching = allTouches.length >= 2;
 
       if (isPinching) {
-        const a = rightMoveTouches[0], b = rightMoveTouches[1];
+        const a = allTouches[0], b = allTouches[1];
         const pdx = a.clientX - b.clientX, pdy = a.clientY - b.clientY;
         const newDist = Math.sqrt(pdx * pdx + pdy * pdy);
         if (this._pinchDist !== null && this._pinchDist > 0) {
@@ -544,12 +541,8 @@ export class SceneManager {
         }
         activeTouches.delete(t.identifier);
       }
-      // Clear pinch when fewer than 2 right-zone touches remain
-      const remainingRight = [...e.touches].filter(t => {
-        const s = activeTouches.get(t.identifier);
-        return s && s.zone === 'right';
-      });
-      if (remainingRight.length < 2) this._pinchDist = null;
+      // Clear pinch when fewer than 2 touches remain
+      if (e.touches.length < 2) this._pinchDist = null;
     };
 
     const handleCancel = (e) => {
