@@ -38,7 +38,8 @@ body {
   background: #000;
   color: var(--text-1);
   overflow: hidden;
-  height: 100vh;
+  height: 100dvh;
+  height: 100vh; /* fallback for old browsers */
   -webkit-font-smoothing: antialiased;
 }
 
@@ -804,6 +805,135 @@ textarea {
 
   /* Loading bar full width on small screens */
   .loading-bar { width: 80vw; }
+}
+
+/* ================================================================
+   LANDSCAPE PHONE  — reapply mobile chrome for phones rotated
+   landscape (height ≤ 500 px). Phones in landscape are wider than
+   768 px so the portrait mobile query above misses them.
+   ================================================================ */
+@media (max-height: 500px) and (orientation: landscape) {
+  /* Re-apply mobile CSS custom props */
+  :root {
+    --sidebar-w:    0px;
+    --panel-w:      100%;
+    --panel-w-wide: 100%;
+    --statusbar-h:  0px;
+  }
+
+  /* ── Sidebar → compact horizontal bottom toolbar ───────── */
+  #sidebar {
+    left:            0;
+    right:           0;
+    top:             auto;
+    bottom:          0;
+    width:           100%;
+    height:          48px;
+    flex-direction:  row;
+    justify-content: center;
+    gap:             2px;
+    padding:         4px 8px;
+    padding-bottom:  max(4px, env(safe-area-inset-bottom));
+    overflow-x:      auto;
+    overflow-y:      hidden;
+    border-right:    none;
+    border-top:      1px solid var(--border);
+    -webkit-overflow-scrolling: touch;
+  }
+  .sb-section  { flex-direction: row; width: auto; padding: 0; }
+  .sb-divider  { width: 1px; height: 26px; margin: 0 4px; }
+  .sb-spacer   { display: none; }
+  .sb-btn::after { display: none !important; }
+
+  /* ── Panel → slide from bottom ────────────────────── */
+  #panel {
+    left:          0;
+    right:         0;
+    top:           auto;
+    bottom:        48px;
+    width:         100% !important;
+    max-height:    60vh;
+    border-right:  none;
+    border-top:    1px solid var(--border);
+    border-radius: 10px 10px 0 0;
+    transform:     translateX(0) translateY(110%);
+  }
+  #panel.open { transform: translateX(0) translateY(0); }
+
+  #status-bar { display: none; }
+
+  /* ── Compass + scale bar ────────────────────────── */
+  #compass-container {
+    bottom: calc(48px + 8px);
+    right:  8px;
+  }
+  #compass-canvas  { width: 60px; height: 60px; }
+  #compass-bearing { display: none; }
+
+  #scale-bar-container {
+    bottom:    calc(48px + 8px);
+    transform: translateX(-50%);
+  }
+
+  #crosshair { transform: translate(-50%, -50%); }
+
+  /* ── Rock popup ─────────────────────────────── */
+  #rock-popup {
+    width:     min(calc(100vw - 24px), 420px);
+    left:      50%;
+    top:       45%;
+    transform: translate(-50%, -50%);
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+
+  /* ── Help modal → centred (not bottom sheet) in landscape ── */
+  .hm-overlay {
+    align-items:  center;
+    justify-content: center;
+    padding:      8px 12px;
+  }
+  .hm-modal {
+    width:         min(800px, 98vw);
+    /* leave room for safe-area + a little breathing space */
+    max-height:    min(96vh, calc(100dvh - 16px));
+    border-radius: 12px;
+    margin:        0;
+  }
+  /* Compact header */
+  .hm-header {
+    padding: 8px 16px 6px;
+  }
+  .hm-title  { font-size: 14px; }
+  /* Tabs — scrollable row so they never wrap/clip */
+  .hm-tabs {
+    overflow-x:  auto;
+    overflow-y:  hidden;
+    padding:     0 10px;
+    gap:         0;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; /* Firefox */
+  }
+  .hm-tabs::-webkit-scrollbar { display: none; }
+  .hm-tab {
+    padding:    7px 10px;
+    font-size:  11.5px;
+    flex-shrink: 0;
+  }
+  /* Compact scrollable content area */
+  .hm-content {
+    padding:    8px 14px 12px;
+    max-height: calc(100dvh - 140px); /* header + tabs + safe area */
+    overflow-y: auto;
+  }
+
+  .hm-control-grid,
+  .hm-tips-grid { grid-template-columns: 1fr; }
+
+  /* Misc */
+  .panel-page     { padding: 12px; }
+  .loading-title  { font-size: 18px; }
+  .loading-bar    { width: 80vw; }
 }
 
 /* ================================================================

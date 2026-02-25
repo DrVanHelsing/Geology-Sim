@@ -416,16 +416,13 @@ export class SceneManager {
           this._joystickChangeCbs.forEach((cb) => cb({ ...this._joystick }));
         }
       }
-      // Initialise pinch tracking when 2+ fingers land; suspend joystick
-      if (e.touches.length >= 2) {
-        if (this._joystick) {
-          this._joystick = null;
-          this._joystickTouchId = null;
-          this._joystickChangeCbs.forEach((cb) => cb(null));
-        }
-        const a = e.touches[0], b = e.touches[1];
-        const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
-        this._pinchDist = Math.sqrt(dx * dx + dy * dy);
+      // Begin pinch only when 2+ fingers are both in the right zone.
+      // A left-zone joystick may coexist with a right-zone orbit/pinch touch.
+      const rightStarts = [...e.touches].filter(t => getZone(t.clientX) === 'right');
+      if (rightStarts.length >= 2) {
+        const a = rightStarts[0], b = rightStarts[1];
+        const dxp = a.clientX - b.clientX, dyp = a.clientY - b.clientY;
+        this._pinchDist = Math.sqrt(dxp * dxp + dyp * dyp);
       }
     };
 
@@ -433,17 +430,19 @@ export class SceneManager {
       e.preventDefault();
       e.stopPropagation();
 
-      // ── Two-finger pinch zoom ──────────────────────────────
-      if (e.touches.length >= 2) {
-        // Suspend joystick during pinch
-        if (this._joystick) {
-          this._joystick = null;
-          this._joystickTouchId = null;
-          this._joystickChangeCbs.forEach((cb) => cb(null));
-        }
-        const a = e.touches[0], b = e.touches[1];
-        const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
-        const newDist = Math.sqrt(dx * dx + dy * dy);
+      // ── Pinch zoom: only when 2+ right-zone fingers are active ─────
+      // Left-zone joystick and right-zone orbit/pinch are independent and
+      // can run simultaneously (one thumb each side).
+      const rightMoveTouches = [...e.touches].filter(t => {
+        const s = activeTouches.get(t.identifier);
+        return s && s.zone === 'right';
+      });
+      const isPinching = rightMoveTouches.length >= 2;
+
+      if (isPinching) {
+        const a = rightMoveTouches[0], b = rightMoveTouches[1];
+        const pdx = a.clientX - b.clientX, pdy = a.clientY - b.clientY;
+        const newDist = Math.sqrt(pdx * pdx + pdy * pdy);
         if (this._pinchDist !== null && this._pinchDist > 0) {
           const scale = newDist / this._pinchDist;
           const camToTarget = this.camera.position.clone().sub(this.controls.target);
@@ -457,16 +456,11 @@ export class SceneManager {
           this.controls.update();
         }
         this._pinchDist = newDist;
-        for (const t of e.changedTouches) {
-          const s = activeTouches.get(t.identifier);
-          if (s) { s.x = t.clientX; s.y = t.clientY; }
-        }
-        return;
+      } else {
+        this._pinchDist = null;
       }
 
-      this._pinchDist = null;
-
-      // ── Single-touch movement ──────────────────────────────
+      // ── Per-touch: joystick (left) and orbit (right, when not pinching) ─
       for (const t of e.changedTouches) {
         const state = activeTouches.get(t.identifier);
         if (!state) continue;
@@ -492,8 +486,8 @@ export class SceneManager {
             this._joystick.knobY = this._joystick.anchorY + ny * clamp;
             this._joystickChangeCbs.forEach((cb) => cb({ ...this._joystick }));
           }
-        } else {
-          // ── Orbit / rotate ────────────────────────────────
+        } else if (!isPinching) {
+          // ── Orbit / rotate (skipped when pinching) ───────────
           const offset = this.camera.position.clone().sub(this.controls.target);
           const spherical = new THREE.Spherical().setFromVector3(offset);
           spherical.theta -= dx * 0.006;
@@ -506,9 +500,8 @@ export class SceneManager {
           offset.setFromSpherical(spherical);
           this.camera.position.copy(this.controls.target).add(offset);
           this.camera.lookAt(this.controls.target);
+          this.controls.update();
         }
-
-        this.controls.update();
       }
     };
 
@@ -543,7 +536,12 @@ export class SceneManager {
         }
         activeTouches.delete(t.identifier);
       }
-      if (e.touches.length < 2) this._pinchDist = null;
+      // Clear pinch when fewer than 2 right-zone touches remain
+      const remainingRight = [...e.touches].filter(t => {
+        const s = activeTouches.get(t.identifier);
+        return s && s.zone === 'right';
+      });
+      if (remainingRight.length < 2) this._pinchDist = null;
     };
 
     const handleCancel = (e) => {
