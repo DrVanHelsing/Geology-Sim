@@ -71,6 +71,8 @@ export class SceneManager {
 
     this._animId   = null;
     this._disposed = false;
+    this._pinchDist = null;
+    this._touchHandlers = null;
   }
 
   // ──────────────────────────────────────────────
@@ -365,6 +367,172 @@ export class SceneManager {
       if (hit) this._clickCbs.forEach((cb) => cb(hit.point));
     });
 
+    // ── Touch controls (mobile) ──────────────────────────────
+    this._setupTouchControls(canvas);
+  }
+
+  // ──────────────────────────────────────────────
+  //  Touch controls (mobile)
+  //  Left half viewport  → physical camera movement (walk/strafe)
+  //  Right half viewport → orbit / rotate
+  //  Two-finger pinch    → zoom
+  // ──────────────────────────────────────────────
+  _setupTouchControls(canvas) {
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    if (!isTouchDevice) return;
+
+    // Disable OrbitControls built-in touch so we manage everything ourselves
+    this.controls.touches = { ONE: null, TWO: null };
+
+    // Active touch map: id → { x, y, startX, startY, zone }
+    const activeTouches = new Map();
+
+    const getZone = (clientX) => {
+      const rect = canvas.getBoundingClientRect();
+      return clientX < rect.left + rect.width / 2 ? 'left' : 'right';
+    };
+
+    const handleStart = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      for (const t of e.changedTouches) {
+        activeTouches.set(t.identifier, {
+          x: t.clientX, y: t.clientY,
+          startX: t.clientX, startY: t.clientY,
+          zone: getZone(t.clientX),
+        });
+      }
+      // Initialise pinch tracking when 2+ fingers contact
+      if (e.touches.length >= 2) {
+        const a = e.touches[0], b = e.touches[1];
+        const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
+        this._pinchDist = Math.sqrt(dx * dx + dy * dy);
+      }
+    };
+
+    const handleMove = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      // ── Two-finger pinch zoom ──────────────────────────────
+      if (e.touches.length >= 2) {
+        const a = e.touches[0], b = e.touches[1];
+        const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
+        const newDist = Math.sqrt(dx * dx + dy * dy);
+        if (this._pinchDist !== null && this._pinchDist > 0) {
+          const scale = newDist / this._pinchDist;
+          const camToTarget = this.camera.position.clone().sub(this.controls.target);
+          const currentDist = camToTarget.length();
+          const newCamDist = Math.max(
+            this.controls.minDistance,
+            Math.min(this.controls.maxDistance, currentDist / scale),
+          );
+          camToTarget.setLength(newCamDist);
+          this.camera.position.copy(this.controls.target).add(camToTarget);
+          this.controls.update();
+        }
+        this._pinchDist = newDist;
+        for (const t of e.changedTouches) {
+          const s = activeTouches.get(t.identifier);
+          if (s) { s.x = t.clientX; s.y = t.clientY; }
+        }
+        return;
+      }
+
+      this._pinchDist = null;
+
+      // ── Single-touch movement ──────────────────────────────
+      for (const t of e.changedTouches) {
+        const state = activeTouches.get(t.identifier);
+        if (!state) continue;
+
+        const dx = t.clientX - state.x;
+        const dy = t.clientY - state.y;
+        state.x = t.clientX;
+        state.y = t.clientY;
+
+        if (state.zone === 'left') {
+          // ── Physical movement (like WASD) ─────────────────
+          const rect = canvas.getBoundingClientRect();
+          const dist = this.camera.position.distanceTo(this.controls.target);
+          const moveScale = Math.max(0.3, dist * 0.45 / rect.width);
+
+          const fwd = new THREE.Vector3();
+          this.camera.getWorldDirection(fwd);
+          fwd.y = 0; fwd.normalize();
+          const right = new THREE.Vector3()
+            .crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
+
+          // Swipe up (dy<0) → move forward; swipe right (dx>0) → strafe right
+          const moveX = (dx * right.x - dy * fwd.x) * moveScale;
+          const moveZ = (dx * right.z - dy * fwd.z) * moveScale;
+
+          const half = TERRAIN_SIZE / 2 * 1.5;
+          this.camera.position.x = Math.max(-half, Math.min(half, this.camera.position.x + moveX));
+          this.camera.position.z = Math.max(-half, Math.min(half, this.camera.position.z + moveZ));
+          this.controls.target.x  = Math.max(-half, Math.min(half, this.controls.target.x  + moveX));
+          this.controls.target.z  = Math.max(-half, Math.min(half, this.controls.target.z  + moveZ));
+
+        } else {
+          // ── Orbit / rotate ────────────────────────────────
+          const offset = this.camera.position.clone().sub(this.controls.target);
+          const spherical = new THREE.Spherical().setFromVector3(offset);
+          spherical.theta -= dx * 0.006;
+          spherical.phi   -= dy * 0.006;
+          spherical.phi = Math.max(
+            this.controls.minPolarAngle,
+            Math.min(this.controls.maxPolarAngle, spherical.phi),
+          );
+          spherical.makeSafe();
+          offset.setFromSpherical(spherical);
+          this.camera.position.copy(this.controls.target).add(offset);
+          this.camera.lookAt(this.controls.target);
+        }
+
+        this.controls.update();
+      }
+    };
+
+    const handleEnd = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const rect = canvas.getBoundingClientRect();
+      for (const t of e.changedTouches) {
+        const state = activeTouches.get(t.identifier);
+        if (!state) continue;
+
+        // Tap detection: minimal movement → fire click/tool action
+        const ddx = t.clientX - state.startX;
+        const ddy = t.clientY - state.startY;
+        if (ddx * ddx + ddy * ddy < 144) { // 12 px threshold
+          this.mouse.x =  ((t.clientX - rect.left) / rect.width)  * 2 - 1;
+          this.mouse.y = -((t.clientY - rect.top)  / rect.height) * 2 + 1;
+          if (this.activeTool === 'navigate') {
+            const markerHit = this._raycastMarkers();
+            if (markerHit) this._markerClickCbs.forEach((cb) => cb(markerHit));
+          } else {
+            const hit = this._raycastTerrain();
+            if (hit) this._clickCbs.forEach((cb) => cb(hit.point));
+          }
+        }
+        activeTouches.delete(t.identifier);
+      }
+      if (e.touches.length < 2) this._pinchDist = null;
+    };
+
+    const handleCancel = (e) => {
+      e.preventDefault();
+      activeTouches.clear();
+      this._pinchDist = null;
+    };
+
+    canvas.addEventListener('touchstart',  handleStart,  { passive: false, capture: true });
+    canvas.addEventListener('touchmove',   handleMove,   { passive: false, capture: true });
+    canvas.addEventListener('touchend',    handleEnd,    { passive: false, capture: true });
+    canvas.addEventListener('touchcancel', handleCancel, { passive: false, capture: true });
+
+    this._touchHandlers = { handleStart, handleMove, handleEnd, handleCancel };
   }
 
   _raycastTerrain() {
@@ -1348,6 +1516,14 @@ export class SceneManager {
     window.removeEventListener('resize', this._onResize);
     window.removeEventListener('keydown', this._onKeyDown);
     window.removeEventListener('keyup', this._onKeyUp);
+    if (this._touchHandlers) {
+      const canvas = this.renderer.domElement;
+      const { handleStart, handleMove, handleEnd, handleCancel } = this._touchHandlers;
+      canvas.removeEventListener('touchstart',  handleStart,  { capture: true });
+      canvas.removeEventListener('touchmove',   handleMove,   { capture: true });
+      canvas.removeEventListener('touchend',    handleEnd,    { capture: true });
+      canvas.removeEventListener('touchcancel', handleCancel, { capture: true });
+    }
     this.controls.dispose();
     this._postFX?.colorTarget?.dispose();
     this.renderer.dispose();

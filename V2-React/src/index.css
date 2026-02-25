@@ -52,7 +52,10 @@ body {
   inset: 0;
   z-index: 1;
 }
-#viewport canvas { display: block; }
+#viewport canvas {
+  display: block;
+  touch-action: none; /* hand all touch events to JS */
+}
 
 /* ── Sidebar ─────────────────────────────────── */
 #sidebar {
@@ -670,9 +673,137 @@ textarea {
 
 /* ── Responsive ──────────────────────────────── */
 @media (max-width: 768px) {
-  :root { --panel-w: 280px; --panel-w-wide: 380px; }
-  #compass-container { bottom: 40px; right: 10px; }
-  #compass-canvas { width: 100px; height: 100px; }
+  :root {
+    --sidebar-w:     0px;
+    --panel-w:       100%;
+    --panel-w-wide:  100%;
+    --statusbar-h:   0px;
+  }
+
+  /* ── Sidebar → horizontal bottom toolbar ─────────────── */
+  #sidebar {
+    left:   0;
+    right:  0;
+    top:    auto;
+    bottom: 0;
+    width:  100%;
+    height: 56px;
+    flex-direction: row;
+    justify-content: center;
+    gap: 2px;
+    padding: 6px 8px;
+    padding-bottom: max(6px, env(safe-area-inset-bottom));
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: none;
+    border-top: 1px solid var(--border);
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sb-section {
+    flex-direction: row;
+    width: auto;
+    padding: 0;
+  }
+  .sb-divider {
+    width: 1px;
+    height: 28px;
+    margin: 0 4px;
+  }
+  .sb-spacer { display: none; }
+  /* Hide hover tooltips on touch devices */
+  .sb-btn::after { display: none !important; }
+
+  /* ── Panel → slide from bottom, full width ───────────── */
+  #panel {
+    left:      0;
+    right:     0;
+    top:       auto;
+    bottom:    56px;
+    width:     100% !important;
+    max-height: 72vh;
+    border-right:  none;
+    border-top:    1px solid var(--border);
+    border-radius: 14px 14px 0 0;
+    transform: translateX(0) translateY(110%);
+  }
+  #panel.open {
+    transform: translateX(0) translateY(0);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* ── Status bar → hidden (no space on mobile) ──────── */
+  #status-bar { display: none; }
+
+  /* ── Compass → above toolbar, smaller ───────────────── */
+  #compass-container {
+    bottom: calc(56px + 12px);
+    right: 10px;
+  }
+  #compass-canvas  { width: 80px; height: 80px; }
+  #compass-bearing { display: none; }
+
+  /* ── Scale bar → centred (no sidebar offset) ───────── */
+  #scale-bar-container {
+    bottom: calc(56px + 12px);
+    transform: translateX(-50%);
+  }
+
+  /* ── Crosshair → no sidebar shift ─────────────────── */
+  #crosshair {
+    transform: translate(-50%, -50%);
+  }
+
+  /* ── Rock popup → near-full width ─────────────────── */
+  #rock-popup {
+    width: min(calc(100vw - 24px), 400px);
+    left: 50%;
+    top:  45%;
+    transform: translate(-50%, -50%);
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+
+  /* ── Help modal → near-fullscreen sheet ────────────── */
+  .hm-overlay {
+    align-items: flex-end;
+    padding:     0;
+  }
+  .hm-modal {
+    width:         100vw;
+    max-height:    90vh;
+    border-radius: 16px 16px 0 0;
+    margin:        0;
+  }
+  .hm-tabs {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding:    0 12px;
+    gap:        0;
+    -webkit-overflow-scrolling: touch;
+  }
+  .hm-tab {
+    padding:    10px 12px;
+    font-size:  12px;
+    flex-shrink: 0;
+  }
+  .hm-header { padding: 14px 16px 12px; }
+  .hm-content { padding: 12px 14px 20px; }
+
+  /* Single-column grids on mobile */
+  .hm-control-grid,
+  .hm-tips-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Panel content padding */
+  .panel-page { padding: 14px; }
+
+  /* Loading screen title size */
+  .loading-title { font-size: 18px; }
+
+  /* Loading bar full width on small screens */
+  .loading-bar { width: 80vw; }
 }
 
 /* ================================================================
@@ -1325,3 +1456,53 @@ textarea {
   color: var(--text-2);
   line-height: 1.55;
 }
+
+/* ── Platform toggle (PC / Mobile switch in Camera tab) ─────── */
+.hm-platform-toggle {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 18px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px;
+}
+.hm-platform-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-3);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.hm-platform-btn:hover { background: rgba(255,255,255,0.05); color: var(--text-2); }
+.hm-platform-btn.active { background: var(--accent-dim); color: var(--accent); }
+
+/* Strong text in control descriptions gets accent colour */
+.hm-control-desc strong { color: var(--accent); font-weight: 600; }
+
+/* ── Mobile note banner (shown in Shortcuts tab on touch devices) */
+.hm-mobile-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: rgba(88, 166, 255, 0.05);
+  border: 1px solid rgba(88, 166, 255, 0.12);
+  margin-bottom: 16px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.55;
+}
+.hm-mobile-note svg { flex-shrink: 0; margin-top: 1px; }

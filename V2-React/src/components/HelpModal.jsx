@@ -1,7 +1,7 @@
 // ================================================================
 //  HelpModal — large visual overlay for help & instructions
 // ================================================================
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import useStore from '../store/useStore';
 import {
   NavigateIcon, IdentifyIcon, DrillIcon, MeasureIcon,
@@ -14,6 +14,62 @@ import {
 /** Keyboard key cap */
 function Key({ children, wide }) {
   return <span className={`hm-key${wide ? ' wide' : ''}`}>{children}</span>;
+}
+
+/* ── Touch gesture graphics (mobile help) ────────────── */
+
+/** Phone outline with zone highlight and gesture arrows */
+function TouchZoneGraphic({ zone }) {
+  if (zone === 'left') {
+    return (
+      <svg width="54" height="70" viewBox="0 0 54 70" fill="none">
+        <rect x="3" y="2" width="48" height="66" rx="8" stroke="var(--text-3)" strokeWidth="1.5"/>
+        <line x1="27" y1="2" x2="27" y2="68" stroke="var(--accent)" strokeWidth="1" strokeDasharray="3,2.5" opacity="0.5"/>
+        <rect x="3" y="2" width="24" height="66" rx="8" fill="var(--accent)" opacity="0.08"/>
+        <circle cx="15" cy="40" r="5" fill="var(--accent)" opacity="0.75"/>
+        <line x1="15" y1="33" x2="15" y2="24" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round"/>
+        <polyline points="11.5,28 15,24 18.5,28" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        <line x1="7" y1="40" x2="13" y2="40" stroke="var(--accent)" strokeWidth="1.2" strokeLinecap="round" opacity="0.4"/>
+        <line x1="17" y1="40" x2="23" y2="40" stroke="var(--accent)" strokeWidth="1.2" strokeLinecap="round" opacity="0.4"/>
+      </svg>
+    );
+  }
+  if (zone === 'right') {
+    return (
+      <svg width="54" height="70" viewBox="0 0 54 70" fill="none">
+        <rect x="3" y="2" width="48" height="66" rx="8" stroke="var(--text-3)" strokeWidth="1.5"/>
+        <line x1="27" y1="2" x2="27" y2="68" stroke="var(--accent)" strokeWidth="1" strokeDasharray="3,2.5" opacity="0.5"/>
+        <rect x="27" y="2" width="24" height="66" rx="8" fill="var(--accent)" opacity="0.08"/>
+        <circle cx="39" cy="40" r="5" fill="var(--accent)" opacity="0.75"/>
+        <path d="M 31,28 A 9,11 0 0 1 47,28" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round"/>
+        <polyline points="44,24 47,28 43,30" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    );
+  }
+  // pinch
+  return (
+    <svg width="54" height="70" viewBox="0 0 54 70" fill="none">
+      <rect x="3" y="2" width="48" height="66" rx="8" stroke="var(--text-3)" strokeWidth="1.5"/>
+      <circle cx="19" cy="38" r="5" fill="var(--accent)" opacity="0.75"/>
+      <circle cx="35" cy="38" r="5" fill="var(--accent)" opacity="0.75"/>
+      <line x1="13" y1="38" x2="7" y2="38" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round"/>
+      <polyline points="10,35 7,38 10,41" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <line x1="41" y1="38" x2="47" y2="38" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round"/>
+      <polyline points="44,35 47,38 44,41" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+/** Single-finger tap ripple graphic */
+function TapGraphic() {
+  return (
+    <svg width="54" height="70" viewBox="0 0 54 70" fill="none">
+      <rect x="3" y="2" width="48" height="66" rx="8" stroke="var(--text-3)" strokeWidth="1.5"/>
+      <circle cx="27" cy="38" r="5" fill="var(--accent)" opacity="0.75"/>
+      <circle cx="27" cy="38" r="11" stroke="var(--accent)" strokeWidth="1.5" opacity="0.35"/>
+      <circle cx="27" cy="38" r="17" stroke="var(--accent)" strokeWidth="1" opacity="0.15"/>
+    </svg>
+  );
 }
 
 /** Mouse illustration */
@@ -102,7 +158,48 @@ const TABS = [
 
 /* ── tab content components ───────────────────────────────── */
 
-function CameraTab() {
+/* ── Mobile camera controls tab ──────────────────────── */
+
+function MobileCameraTab() {
+  return (
+    <div className="hm-tab-body">
+      <div className="hm-control-grid">
+        <div className="hm-control-card">
+          <div className="hm-control-visual"><TouchZoneGraphic zone="left" /></div>
+          <div className="hm-control-info">
+            <div className="hm-control-label">Move Camera</div>
+            <div className="hm-control-desc">Drag on the <strong>left half</strong> of the 3D view to physically move the camera — forward, back, and side to side relative to where you're looking.</div>
+          </div>
+        </div>
+        <div className="hm-control-card">
+          <div className="hm-control-visual"><TouchZoneGraphic zone="right" /></div>
+          <div className="hm-control-info">
+            <div className="hm-control-label">Orbit / Rotate</div>
+            <div className="hm-control-desc">Drag on the <strong>right half</strong> of the 3D view to orbit and rotate the camera — look around the terrain from any angle.</div>
+          </div>
+        </div>
+        <div className="hm-control-card">
+          <div className="hm-control-visual"><TouchZoneGraphic zone="pinch" /></div>
+          <div className="hm-control-info">
+            <div className="hm-control-label">Pinch to Zoom</div>
+            <div className="hm-control-desc">Pinch two fingers together or apart anywhere in the 3D view to zoom in and out. Get close to inspect textures or zoom out for an overview.</div>
+          </div>
+        </div>
+        <div className="hm-control-card">
+          <div className="hm-control-visual"><TapGraphic /></div>
+          <div className="hm-control-info">
+            <div className="hm-control-label">Tap to Interact</div>
+            <div className="hm-control-desc">Tap anywhere in the 3D view to use the currently active tool — identify a rock, drill a core, measure distances, and more. Select tools from the toolbar at the bottom of the screen.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Desktop (PC) camera controls tab ────────────────── */
+
+function PCCameraTab() {
   return (
     <div className="hm-tab-body">
       <div className="hm-control-grid">
@@ -173,6 +270,47 @@ function CameraTab() {
   );
 }
 
+/* ── Platform-aware Camera tab ────────────────────────── */
+
+function CameraTab() {
+  const isMobile = useMemo(
+    () => typeof window !== 'undefined' &&
+          ('ontouchstart' in window || navigator.maxTouchPoints > 0),
+    [],
+  );
+  const [showMobile, setShowMobile] = useState(isMobile);
+
+  return (
+    <div>
+      {/* Platform toggle */}
+      <div className="hm-platform-toggle">
+        <button
+          className={`hm-platform-btn${!showMobile ? ' active' : ''}`}
+          onClick={() => setShowMobile(false)}
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="2" y="3" width="20" height="14" rx="2"/>
+            <path d="M8 21h8M12 17v4"/>
+          </svg>
+          Desktop / PC
+        </button>
+        <button
+          className={`hm-platform-btn${showMobile ? ' active' : ''}`}
+          onClick={() => setShowMobile(true)}
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="5" y="2" width="14" height="20" rx="2"/>
+            <circle cx="12" cy="18" r="1" fill="currentColor"/>
+          </svg>
+          Mobile / Touch
+        </button>
+      </div>
+
+      {showMobile ? <MobileCameraTab /> : <PCCameraTab />}
+    </div>
+  );
+}
+
 function ToolsTab() {
   return (
     <div className="hm-tab-body">
@@ -226,9 +364,23 @@ function ShortcutsTab() {
     { keys: ['Esc'], action: 'Close current panel / help', cat: 'General' },
   ];
 
+  const isMobile = useMemo(
+    () => typeof window !== 'undefined' &&
+          ('ontouchstart' in window || navigator.maxTouchPoints > 0),
+    [],
+  );
+
   let lastCat = '';
   return (
     <div className="hm-tab-body">
+      {isMobile && (
+        <div className="hm-mobile-note">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          On a touchscreen device, keyboard shortcuts aren’t available. Use the toolbar at the bottom of the screen to switch tools, and the panel buttons to open the legend, notebook, and settings.
+        </div>
+      )}
       <div className="hm-shortcut-table">
         {shortcuts.map((s, i) => {
           const showCat = s.cat !== lastCat;
