@@ -1,5 +1,5 @@
 /* ================================================================
-   GEOLOGY SIMULATOR — GLOBAL STYLES
+   GEOLOGY SIMULATOR â€” GLOBAL STYLES
    ================================================================ */
 
 :root {
@@ -24,7 +24,7 @@
   --mono: 'JetBrains Mono', 'Cascadia Code', monospace;
 }
 
-/* ── Reset ─────────────────────────────────────── */
+/* â”€â”€ Reset â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 *,
 *::before,
 *::after {
@@ -33,13 +33,21 @@
   padding: 0;
 }
 
+html {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   font-family: var(--font);
   background: #000;
   color: var(--text-1);
   overflow: hidden;
-  height: 100dvh;
-  height: 100vh; /* fallback for old browsers */
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -47,18 +55,23 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--text-3); border-radius: 3px; }
 
-/* ── Viewport ────────────────────────────────── */
+/* â”€â”€ Viewport â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #viewport {
   position: fixed;
   inset: 0;
   z-index: 1;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
 }
 #viewport canvas {
   display: block;
+  width: 100% !important;
+  height: 100% !important;
   touch-action: none; /* hand all touch events to JS */
 }
 
-/* ── Sidebar ─────────────────────────────────── */
+/* â”€â”€ Sidebar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #sidebar {
   position: fixed;
   left: 0; top: 0; bottom: 0;
@@ -129,7 +142,7 @@ body {
 
 .sb-spacer { flex: 1; }
 
-/* ── Panel (slides from sidebar) ─────────────── */
+/* â”€â”€ Panel (slides from sidebar) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #panel {
   position: fixed;
   left: var(--sidebar-w);
@@ -162,7 +175,7 @@ body {
 }
 .panel-header svg { width: 18px; height: 18px; color: var(--accent); }
 
-/* ── Form elements ───────────────────────────── */
+/* â”€â”€ Form elements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .field-group { margin-bottom: 14px; }
 .field-label {
   font-size: 11px;
@@ -228,7 +241,7 @@ textarea {
 .btn-block { width: 100%; }
 .btn-sm { padding: 5px 10px; font-size: 12px; }
 
-/* ── Settings panel ──────────────────────────── */
+/* â”€â”€ Settings panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .settings-section-title {
   font-size: 10px;
   text-transform: uppercase;
@@ -380,7 +393,7 @@ textarea {
   border-top: 1px solid var(--border);
 }
 
-/* ── Legend ───────────────────────────────────── */
+/* â”€â”€ Legend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .legend-item {
   display: flex;
   align-items: center;
@@ -405,7 +418,7 @@ textarea {
 .legend-name { font-size: 13px; font-weight: 500; }
 .legend-elev { font-size: 11px; color: var(--text-2); margin-top: 1px; }
 
-/* ── Drill Core ──────────────────────────────── */
+/* â”€â”€ Drill Core â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .core-wrapper {
   display: flex;
   gap: 4px;
@@ -460,7 +473,7 @@ textarea {
 .core-log-name { font-weight: 600; margin-bottom: 2px; }
 .core-log-detail { color: var(--text-2); font-size: 11px; line-height: 1.4; }
 
-/* ── Measure ─────────────────────────────────── */
+/* â”€â”€ Measure â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .measure-result {
   background: var(--bg-card);
   border-radius: 6px;
@@ -475,7 +488,7 @@ textarea {
 }
 .measure-label { font-size: 11px; color: var(--text-2); margin-top: 2px; }
 
-/* ── Status Bar ──────────────────────────────── */
+/* â”€â”€ Status Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #status-bar {
   position: fixed;
   bottom: 0;
@@ -499,7 +512,7 @@ textarea {
 .status-rock { color: var(--accent); font-family: var(--font); font-weight: 500; }
 .status-sep { width: 1px; height: 14px; background: var(--border); }
 
-/* ── Compass ─────────────────────────────────── */
+/* â”€â”€ Compass â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #compass-container {
   position: fixed;
   bottom: 50px;
@@ -525,7 +538,7 @@ textarea {
   border-radius: 10px;
 }
 
-/* ── Scale Bar ───────────────────────────────── */
+/* â”€â”€ Scale Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #scale-bar-container {
   position: fixed;
   bottom: 44px;
@@ -562,7 +575,7 @@ textarea {
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 
-/* ── Crosshair ───────────────────────────────── */
+/* â”€â”€ Crosshair â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #crosshair {
   position: fixed;
   top: 50%;
@@ -592,7 +605,7 @@ textarea {
   transform: translateY(-50%);
 }
 
-/* ── Rock Info Popup ─────────────────────────── */
+/* â”€â”€ Rock Info Popup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #rock-popup {
   position: fixed;
   top: 50%;
@@ -644,7 +657,7 @@ textarea {
 }
 .popup-field-value { font-size: 13px; color: var(--text-1); margin-top: 2px; }
 
-/* ── Loading Screen ──────────────────────────── */
+/* â”€â”€ Loading Screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 #loading-screen {
   position: fixed;
   inset: 0;
@@ -672,7 +685,7 @@ textarea {
   transition: width 0.3s;
 }
 
-/* ── Responsive ──────────────────────────────── */
+/* â”€â”€ Responsive â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 @media (max-width: 768px) {
   :root {
     --sidebar-w:     0px;
@@ -681,7 +694,7 @@ textarea {
     --statusbar-h:   0px;
   }
 
-  /* ── Sidebar → horizontal bottom toolbar ─────────────── */
+  /* â”€â”€ Sidebar â†’ horizontal bottom toolbar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   #sidebar {
     left:   0;
     right:  0;
@@ -715,7 +728,7 @@ textarea {
   /* Hide hover tooltips on touch devices */
   .sb-btn::after { display: none !important; }
 
-  /* ── Panel → slide from bottom, full width ───────────── */
+  /* â”€â”€ Panel â†’ slide from bottom, full width â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   #panel {
     left:      0;
     right:     0;
@@ -733,10 +746,10 @@ textarea {
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
-  /* ── Status bar → hidden (no space on mobile) ──────── */
+  /* â”€â”€ Status bar â†’ hidden (no space on mobile) â”€â”€â”€â”€â”€â”€â”€â”€ */
   #status-bar { display: none; }
 
-  /* ── Compass → above toolbar, smaller ───────────────── */
+  /* â”€â”€ Compass â†’ above toolbar, smaller â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   #compass-container {
     bottom: calc(56px + 12px);
     right: 10px;
@@ -744,18 +757,18 @@ textarea {
   #compass-canvas  { width: 80px; height: 80px; }
   #compass-bearing { display: none; }
 
-  /* ── Scale bar → centred (no sidebar offset) ───────── */
+  /* â”€â”€ Scale bar â†’ centred (no sidebar offset) â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   #scale-bar-container {
     bottom: calc(56px + 12px);
     transform: translateX(-50%);
   }
 
-  /* ── Crosshair → no sidebar shift ─────────────────── */
+  /* â”€â”€ Crosshair â†’ no sidebar shift â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   #crosshair {
     transform: translate(-50%, -50%);
   }
 
-  /* ── Rock popup → near-full width ─────────────────── */
+  /* â”€â”€ Rock popup â†’ near-full width â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   #rock-popup {
     width: min(calc(100vw - 24px), 400px);
     left: 50%;
@@ -765,7 +778,7 @@ textarea {
     overflow-y: auto;
   }
 
-  /* ── Help modal → near-fullscreen sheet ────────────── */
+  /* â”€â”€ Help modal â†’ near-fullscreen sheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   .hm-overlay {
     align-items: flex-end;
     padding:     0;
@@ -808,8 +821,8 @@ textarea {
 }
 
 /* ================================================================
-   LANDSCAPE PHONE  — reapply mobile chrome for phones rotated
-   landscape (height ≤ 500 px). Phones in landscape are wider than
+   LANDSCAPE PHONE  â€” reapply mobile chrome for phones rotated
+   landscape (height â‰¤ 500 px). Phones in landscape are wider than
    768 px so the portrait mobile query above misses them.
    ================================================================ */
 @media (max-height: 500px) and (orientation: landscape) {
@@ -821,7 +834,7 @@ textarea {
     --statusbar-h:  0px;
   }
 
-  /* ── Sidebar → compact horizontal bottom toolbar ───────── */
+  /* â”€â”€ Sidebar â†’ compact horizontal bottom toolbar â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   #sidebar {
     left:            0;
     right:           0;
@@ -845,7 +858,7 @@ textarea {
   .sb-spacer   { display: none; }
   .sb-btn::after { display: none !important; }
 
-  /* ── Panel → slide from bottom ────────────────────── */
+  /* â”€â”€ Panel â†’ slide from bottom â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   #panel {
     left:          0;
     right:         0;
@@ -862,7 +875,7 @@ textarea {
 
   #status-bar { display: none; }
 
-  /* ── Compass + scale bar ────────────────────────── */
+  /* â”€â”€ Compass + scale bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   #compass-container {
     bottom: calc(48px + 8px);
     right:  8px;
@@ -877,7 +890,7 @@ textarea {
 
   #crosshair { transform: translate(-50%, -50%); }
 
-  /* ── Rock popup ─────────────────────────────── */
+  /* â”€â”€ Rock popup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   #rock-popup {
     width:     min(calc(100vw - 24px), 420px);
     left:      50%;
@@ -887,7 +900,7 @@ textarea {
     overflow-y: auto;
   }
 
-  /* ── Help modal → centred (not bottom sheet) in landscape ── */
+  /* â”€â”€ Help modal â†’ centred (not bottom sheet) in landscape â”€â”€ */
   .hm-overlay {
     align-items:  center;
     justify-content: center;
@@ -905,7 +918,7 @@ textarea {
     padding: 8px 16px 6px;
   }
   .hm-title  { font-size: 14px; }
-  /* Tabs — scrollable row so they never wrap/clip */
+  /* Tabs â€” scrollable row so they never wrap/clip */
   .hm-tabs {
     overflow-x:  auto;
     overflow-y:  hidden;
@@ -1222,7 +1235,7 @@ textarea {
    HELP MODAL  (full-screen overlay with tabbed content)
    ================================================================ */
 
-/* ── overlay & container ─────────────────────────────────── */
+/* â”€â”€ overlay & container â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .hm-overlay {
   position: fixed;
   inset: 0;
@@ -1253,7 +1266,7 @@ textarea {
   to   { opacity: 1; transform: translateY(0)   scale(1); }
 }
 
-/* ── header ──────────────────────────────────────────────── */
+/* â”€â”€ header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .hm-header {
   display: flex;
   align-items: center;
@@ -1282,7 +1295,7 @@ textarea {
 }
 .hm-close:hover { background: rgba(255,80,80,0.18); color: #f66; }
 
-/* ── tabs ────────────────────────────────────────────────── */
+/* â”€â”€ tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .hm-tabs {
   display: flex;
   gap: 2px;
@@ -1308,7 +1321,7 @@ textarea {
   border-bottom-color: var(--accent);
 }
 
-/* ── scrollable content area ─────────────────────────────── */
+/* â”€â”€ scrollable content area â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .hm-content {
   flex: 1;
   overflow-y: auto;
@@ -1322,7 +1335,7 @@ textarea {
 }
 @keyframes hmContentFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
-/* ── key cap ─────────────────────────────────────────────── */
+/* â”€â”€ key cap â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .hm-key {
   display: inline-flex;
   align-items: center;
@@ -1343,7 +1356,7 @@ textarea {
 }
 .hm-key.wide { min-width: 56px; }
 
-/* ── key clusters (WASD / arrows) ────────────────────────── */
+/* â”€â”€ key clusters (WASD / arrows) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .hm-key-cluster {
   display: flex;
   flex-direction: column;
@@ -1371,12 +1384,12 @@ textarea {
   font-style: italic;
 }
 
-/* ── mouse graphic ───────────────────────────────────────── */
+/* â”€â”€ mouse graphic â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .hm-mouse {
   flex-shrink: 0;
 }
 
-/* ── camera controls grid ────────────────────────────────── */
+/* â”€â”€ camera controls grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .hm-control-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
@@ -1420,7 +1433,7 @@ textarea {
   line-height: 1.55;
 }
 
-/* ── tools grid ──────────────────────────────────────────── */
+/* â”€â”€ tools grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .hm-tools-grid {
   display: flex;
   flex-direction: column;
@@ -1482,7 +1495,7 @@ textarea {
   margin-bottom: 2px;
 }
 
-/* ── shortcuts table ─────────────────────────────────────── */
+/* â”€â”€ shortcuts table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .hm-shortcut-table {
   display: flex;
   flex-direction: column;
@@ -1509,7 +1522,7 @@ textarea {
 .hm-shortcut-keys { min-width: 60px; display: flex; gap: 4px; }
 .hm-shortcut-action { font-size: 13px; color: var(--text-2); }
 
-/* ── panel cards ─────────────────────────────────────────── */
+/* â”€â”€ panel cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .hm-panels-section { margin-top: 8px; }
 .hm-section-title {
   font-size: 13px;
@@ -1549,7 +1562,7 @@ textarea {
 }
 .hm-panel-card-desc { font-size: 12px; color: var(--text-2); line-height: 1.5; }
 
-/* ── tips grid ───────────────────────────────────────────── */
+/* â”€â”€ tips grid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .hm-tips-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
@@ -1587,7 +1600,7 @@ textarea {
   line-height: 1.55;
 }
 
-/* ── Platform toggle (PC / Mobile switch in Camera tab) ─────── */
+/* â”€â”€ Platform toggle (PC / Mobile switch in Camera tab) â”€â”€â”€â”€â”€â”€â”€ */
 .hm-platform-toggle {
   display: flex;
   gap: 6px;
@@ -1621,7 +1634,7 @@ textarea {
 /* Strong text in control descriptions gets accent colour */
 .hm-control-desc strong { color: var(--accent); font-weight: 600; }
 
-/* ── Mobile note banner (shown in Shortcuts tab on touch devices) */
+/* â”€â”€ Mobile note banner (shown in Shortcuts tab on touch devices) */
 .hm-mobile-note {
   display: flex;
   align-items: flex-start;
@@ -1638,11 +1651,9 @@ textarea {
 .hm-mobile-note svg { flex-shrink: 0; margin-top: 1px; }
 
 /* ================================================================
-   MOBILE CONTROLS OVERLAY  (joystick + fullscreen button)
+   MOBILE CONTROLS OVERLAY  (joystick)
    ================================================================ */
 
-/* Joystick visual — transparent overlay, pointer-events off so it doesn’t
-   block the canvas underneath */
 .mc-joystick-overlay {
   position: fixed;
   inset: 0;
@@ -1650,7 +1661,6 @@ textarea {
   z-index: 50;
 }
 
-/* Outer ring — shows the joystick boundary */
 .mc-joystick-outer {
   position: absolute;
   border-radius: 50%;
@@ -1660,7 +1670,6 @@ textarea {
   transition: none;
 }
 
-/* Inner knob — tracks the finger position */
 .mc-joystick-knob {
   position: absolute;
   border-radius: 50%;
@@ -1668,30 +1677,4 @@ textarea {
   border: 2px solid rgba(88, 166, 255, 0.80);
   box-shadow: 0 0 12px rgba(88, 166, 255, 0.35);
   transition: none;
-}
-
-/* Fullscreen button — fixed top-right corner */
-.mc-fullscreen-btn {
-  position: fixed;
-  top: max(12px, env(safe-area-inset-top, 12px));
-  right: 12px;
-  z-index: 210;
-  width: 36px;
-  height: 36px;
-  border-radius: 9px;
-  background: rgba(13, 17, 23, 0.80);
-  border: 1px solid rgba(240, 246, 252, 0.10);
-  color: var(--text-2);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-.mc-fullscreen-btn:hover {
-  background: rgba(88, 166, 255, 0.12);
-  color: var(--accent);
-  border-color: rgba(88, 166, 255, 0.25);
 }

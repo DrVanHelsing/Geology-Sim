@@ -218,6 +218,14 @@ export class SceneManager {
                            h * Math.min(window.devicePixelRatio, 2));
     };
     window.addEventListener('resize', this._onResize);
+    // Fullscreen transitions may not fire 'resize' on all browsers
+    document.addEventListener('fullscreenchange', this._onResize);
+    document.addEventListener('webkitfullscreenchange', this._onResize);
+    // Also listen for orientation changes (some mobile browsers)
+    window.addEventListener('orientationchange', () => {
+      // Delay slightly so the browser has applied the new dimensions
+      setTimeout(this._onResize, 150);
+    });
 
     onProgress?.(95, 'Starting renderer…');
     this._animate();
@@ -1551,6 +1559,8 @@ export class SceneManager {
     this._disposed = true;
     if (this._animId) cancelAnimationFrame(this._animId);
     window.removeEventListener('resize', this._onResize);
+    document.removeEventListener('fullscreenchange', this._onResize);
+    document.removeEventListener('webkitfullscreenchange', this._onResize);
     window.removeEventListener('keydown', this._onKeyDown);
     window.removeEventListener('keyup', this._onKeyUp);
     this._joystick = null;
