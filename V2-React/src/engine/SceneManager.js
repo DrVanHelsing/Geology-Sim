@@ -71,7 +71,6 @@ export class SceneManager {
 
     this._animId   = null;
     this._disposed = false;
-    this._pinchDist = null;
     this._touchHandlers     = null;
     this._joystick          = null;   // null | { anchorX, anchorY, knobX, knobY, dx, dy }
     this._joystickTouchId   = null;   // which touch ID drives the joystick
@@ -386,7 +385,6 @@ export class SceneManager {
   //  Touch controls (mobile)
   //  Left half viewport  → physical camera movement (walk/strafe)
   //  Right half viewport → orbit / rotate
-  //  Two-finger pinch    → zoom
   // ──────────────────────────────────────────────
   _setupTouchControls(canvas) {
     const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
@@ -424,48 +422,13 @@ export class SceneManager {
           this._joystickChangeCbs.forEach((cb) => cb({ ...this._joystick }));
         }
       }
-      // Begin pinch when 2+ fingers are touching anywhere on screen.
-      // The joystick (left zone) can coexist with pinch.
-      if (e.touches.length >= 2) {
-        const a = e.touches[0], b = e.touches[1];
-        const dxp = a.clientX - b.clientX, dyp = a.clientY - b.clientY;
-        this._pinchDist = Math.sqrt(dxp * dxp + dyp * dyp);
-      }
     };
 
     const handleMove = (e) => {
       e.preventDefault();
       e.stopPropagation();
 
-      // ── Pinch zoom: when 2+ fingers are active anywhere ─────────
-      // Left-zone joystick and right-zone orbit are independent and
-      // can run simultaneously (one thumb each side). Pinch spans
-      // any two fingers regardless of zone.
-      const allTouches = [...e.touches];
-      const isPinching = allTouches.length >= 2;
-
-      if (isPinching) {
-        const a = allTouches[0], b = allTouches[1];
-        const pdx = a.clientX - b.clientX, pdy = a.clientY - b.clientY;
-        const newDist = Math.sqrt(pdx * pdx + pdy * pdy);
-        if (this._pinchDist !== null && this._pinchDist > 0) {
-          const scale = newDist / this._pinchDist;
-          const camToTarget = this.camera.position.clone().sub(this.controls.target);
-          const currentDist = camToTarget.length();
-          const newCamDist = Math.max(
-            this.controls.minDistance,
-            Math.min(this.controls.maxDistance, currentDist / scale),
-          );
-          camToTarget.setLength(newCamDist);
-          this.camera.position.copy(this.controls.target).add(camToTarget);
-          this.controls.update();
-        }
-        this._pinchDist = newDist;
-      } else {
-        this._pinchDist = null;
-      }
-
-      // ── Per-touch: joystick (left) and orbit (right, when not pinching) ─
+      // ── Per-touch: joystick (left) and orbit (right) ─
       for (const t of e.changedTouches) {
         const state = activeTouches.get(t.identifier);
         if (!state) continue;
@@ -491,8 +454,8 @@ export class SceneManager {
             this._joystick.knobY = this._joystick.anchorY + ny * clamp;
             this._joystickChangeCbs.forEach((cb) => cb({ ...this._joystick }));
           }
-        } else if (!isPinching) {
-          // ── Orbit / rotate (skipped when pinching) ───────────
+        } else {
+          // ── Orbit / rotate ───────────
           const offset = this.camera.position.clone().sub(this.controls.target);
           const spherical = new THREE.Spherical().setFromVector3(offset);
           spherical.theta -= dx * 0.006;
@@ -541,14 +504,11 @@ export class SceneManager {
         }
         activeTouches.delete(t.identifier);
       }
-      // Clear pinch when fewer than 2 touches remain
-      if (e.touches.length < 2) this._pinchDist = null;
     };
 
     const handleCancel = (e) => {
       e.preventDefault();
       activeTouches.clear();
-      this._pinchDist = null;
       this._joystick = null;
       this._joystickTouchId = null;
       this._joystickChangeCbs.forEach((cb) => cb(null));
@@ -900,6 +860,27 @@ export class SceneManager {
   }
   getCameraPosition() { return this.camera.position.clone(); }
   getControlsTarget()  { return this.controls.target.clone(); }
+
+  /** Set camera distance from target (zoom). 0 = closest, 1 = farthest. */
+  setZoomLevel(t) {
+    const min = this.controls.minDistance;
+    const max = this.controls.maxDistance;
+    // Use exponential interpolation for natural feel
+    const dist = min * Math.pow(max / min, Math.max(0, Math.min(1, t)));
+    const camToTarget = this.camera.position.clone().sub(this.controls.target);
+    camToTarget.setLength(dist);
+    this.camera.position.copy(this.controls.target).add(camToTarget);
+    this.controls.update();
+  }
+
+  /** Get current zoom level as 0–1. 0 = closest, 1 = farthest. */
+  getZoomLevel() {
+    const min = this.controls.minDistance;
+    const max = this.controls.maxDistance;
+    const dist = this.camera.position.distanceTo(this.controls.target);
+    // Inverse of exponential interpolation
+    return Math.log(dist / min) / Math.log(max / min);
+  }
   getScaleData() {
     const fov  = this.camera.fov * Math.PI / 180;
     const dist = this.camera.position.distanceTo(this.controls.target);

@@ -703,6 +703,7 @@ textarea {
     width:  100%;
     height: 56px;
     flex-direction: row;
+    align-items: center;
     justify-content: center;
     gap: 2px;
     padding: 6px 8px;
@@ -727,6 +728,9 @@ textarea {
   .sb-spacer { display: none; }
   /* Hide hover tooltips on touch devices */
   .sb-btn::after { display: none !important; }
+  /* Slightly larger toolbar buttons on mobile portrait */
+  .sb-btn { width: 44px; height: 44px; }
+  .sb-btn svg { width: 22px; height: 22px; }
 
   /* â”€â”€ Panel â†’ slide from bottom, full width â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   #panel {
@@ -893,6 +897,7 @@ textarea {
     width:           100%;
     height:          48px;
     flex-direction:  row;
+    align-items:     center;
     justify-content: center;
     gap:             2px;
     padding:         4px 8px;
@@ -907,8 +912,8 @@ textarea {
   .sb-divider  { width: 1px; height: 26px; margin: 0 4px; }
   .sb-spacer   { display: none; }
   .sb-btn::after { display: none !important; }
-  .sb-btn { width: 36px; height: 36px; }
-  .sb-btn svg { width: 18px; height: 18px; }
+  .sb-btn { width: 40px; height: 40px; }
+  .sb-btn svg { width: 20px; height: 20px; }
 
   /* â”€â”€ Panel â†’ slide from bottom â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   #panel {
@@ -1812,4 +1817,94 @@ textarea {
   background: rgba(88, 166, 255, 0.12);
   color: var(--accent);
   border-color: rgba(88, 166, 255, 0.25);
+}
+
+/* ── Vertical zoom slider (mobile) ─────────────────────────── */
+.mc-zoom-slider {
+  position: fixed;
+  right: 12px;
+  bottom: calc(56px + 80px);   /* above toolbar + compass */
+  z-index: 210;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 4px;
+  border-radius: 12px;
+  background: rgba(13, 17, 23, 0.80);
+  border: 1px solid rgba(240, 246, 252, 0.10);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.mc-zoom-icon {
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.mc-zoom-range {
+  writing-mode: vertical-lr;
+  direction: rtl;           /* top = zoom in (close), bottom = zoom out (far) */
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 120px;
+  background: transparent;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  touch-action: none;
+}
+/* Track */
+.mc-zoom-range::-webkit-slider-runnable-track {
+  width: 4px;
+  height: 100%;
+  border-radius: 2px;
+  background: rgba(240, 246, 252, 0.15);
+}
+.mc-zoom-range::-moz-range-track {
+  width: 4px;
+  height: 100%;
+  border-radius: 2px;
+  background: rgba(240, 246, 252, 0.15);
+}
+/* Thumb */
+.mc-zoom-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid rgba(255,255,255,0.2);
+  box-shadow: 0 0 8px rgba(88, 166, 255, 0.4);
+  margin-left: -9px;
+}
+.mc-zoom-range::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid rgba(255,255,255,0.2);
+  box-shadow: 0 0 8px rgba(88, 166, 255, 0.4);
+}
+
+/* Landscape adjustments for zoom slider */
+@media (max-height: 500px) and (orientation: landscape) {
+  .mc-zoom-slider {
+    bottom: calc(48px + 60px);
+    right: 10px;
+    padding: 6px 3px;
+    gap: 4px;
+  }
+  .mc-zoom-range {
+    height: 90px;
+    width: 24px;
+  }
+  .mc-zoom-range::-webkit-slider-thumb {
+    width: 18px;
+    height: 18px;
+    margin-left: -7px;
+  }
+  .mc-zoom-range::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+  }
 }
