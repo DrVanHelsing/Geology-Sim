@@ -1,7 +1,7 @@
 // ================================================================
-//  MobileControls — virtual joystick overlay
+//  MobileControls — virtual joystick overlay + fullscreen button
 // ================================================================
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useEngine } from '../context/SceneContext';
 
 const OUTER_R = 65;   // px — outer ring radius
@@ -13,6 +13,7 @@ const IS_TOUCH = typeof window !== 'undefined' &&
 export default function MobileControls() {
   const engineRef  = useEngine();
   const [joystick, setJoystick] = useState(null);
+  const [isFs,     setIsFs]     = useState(false);
   const autoFsTriedRef = useRef(false);
 
   // ── Subscribe to joystick state from engine ──────────────────
@@ -47,13 +48,39 @@ export default function MobileControls() {
     return () => document.removeEventListener('touchstart', tryFs);
   }, []);
 
-  // ── Nothing to render on non-touch devices ────────────────────
-  if (!IS_TOUCH) return null;
+  // ── Track fullscreen state ────────────────────────────────────
+  useEffect(() => {
+    const onFsChange = () =>
+      setIsFs(!!(document.fullscreenElement || document.webkitFullscreenElement));
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+    };
+  }, []);
+
+  // ── Fullscreen toggle ─────────────────────────────────────────
+  const toggleFs = useCallback(async () => {
+    try {
+      const inFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+      if (!inFs) {
+        const el = document.documentElement;
+        if (el.requestFullscreen) await el.requestFullscreen();
+        else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+        try { await screen.orientation?.lock?.('landscape'); } catch (_) {}
+      } else {
+        if (document.exitFullscreen) await document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+        try { screen.orientation?.unlock?.(); } catch (_) {}
+      }
+    } catch (_) {}
+  }, []);
 
   return (
     <>
-      {/* ── Virtual joystick visual (shown while active) ── */}
-      {joystick && (
+      {/* ── Virtual joystick visual (mobile only, shown while active) ── */}
+      {IS_TOUCH && joystick && (
         <div className="mc-joystick-overlay" aria-hidden="true">
           <div
             className="mc-joystick-outer"
@@ -75,6 +102,30 @@ export default function MobileControls() {
           />
         </div>
       )}
+
+      {/* ── Fullscreen toggle button (all devices) ── */}
+      <button
+        className="mc-fullscreen-btn"
+        onClick={toggleFs}
+        title={isFs ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+        aria-label={isFs ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+      >
+        {isFs ? (
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="4 14 10 14 10 20"/>
+            <polyline points="20 10 14 10 14 4"/>
+            <line x1="10" y1="14" x2="3" y2="21"/>
+            <line x1="21" y1="3" x2="14" y2="10"/>
+          </svg>
+        ) : (
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 3 21 3 21 9"/>
+            <polyline points="9 21 3 21 3 15"/>
+            <line x1="21" y1="3" x2="14" y2="10"/>
+            <line x1="3" y1="21" x2="10" y2="14"/>
+          </svg>
+        )}
+      </button>
     </>
   );
 }
