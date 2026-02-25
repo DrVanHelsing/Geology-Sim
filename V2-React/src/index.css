@@ -1,4 +1,4 @@
-/* ================================================================
+﻿/* ================================================================
    GEOLOGY SIMULATOR â€” GLOBAL STYLES
    ================================================================ */
 
@@ -746,6 +746,54 @@ textarea {
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
+
+  /* Mobile panel header (portrait) */
+  .panel-mobile-header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    padding: 10px 14px 10px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg-panel);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-mobile-handle {
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--text-3);
+    opacity: 0.4;
+    margin-bottom: 8px;
+  }
+  .panel-mobile-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-1);
+  }
+  .panel-mobile-close {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.08);
+    border: none;
+    border-radius: 50%;
+    color: var(--text-2);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .panel-mobile-close:active {
+    background: rgba(255,255,255,0.16);
+  }
+  /* Hide desktop pin button on mobile */
+  .panel-pin-btn { display: none !important; }
   /* â”€â”€ Status bar â†’ hidden (no space on mobile) â”€â”€â”€â”€â”€â”€â”€â”€ */
   #status-bar { display: none; }
 
@@ -876,6 +924,52 @@ textarea {
     transform:     translateX(0) translateY(110%);
   }
   #panel.open { transform: translateX(0) translateY(0); }
+
+  /* — Mobile panel header (landscape) — */
+  .panel-mobile-header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    padding: 6px 12px 6px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg-panel);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-mobile-handle {
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: 32px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--text-3);
+    opacity: 0.4;
+    margin-bottom: 4px;
+  }
+  .panel-mobile-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-1);
+  }
+  .panel-mobile-close {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.08);
+    border: none;
+    border-radius: 50%;
+    color: var(--text-2);
+    cursor: pointer;
+  }
+  .panel-mobile-close:active {
+    background: rgba(255,255,255,0.16);
+  }
+  .panel-pin-btn { display: none !important; }
 
   #status-bar { display: none; }
 
@@ -1027,6 +1121,9 @@ textarea {
   z-index: 140;
   background: transparent;
 }
+
+/* Mobile panel header — hidden on desktop */
+.panel-mobile-header { display: none; }
 
 /* ================================================================
    LAYER MANAGER
