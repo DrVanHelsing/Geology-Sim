@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { SceneProvider } from './context/SceneContext';
 import useSceneEngine from './hooks/useSceneEngine';
 import useKeyboardShortcuts from './hooks/useKeyboardShortcuts';
@@ -12,7 +13,6 @@ import HUD from './components/HUD';
 import LoadingScreen from './components/LoadingScreen';
 import RockPopup from './components/RockPopup';
 import MobileControls from './components/MobileControls';
-import { Analytics } from "@vercel/analytics/react";
 
 export default function App() {
   const containerRef = useRef(null);
@@ -32,6 +32,7 @@ export default function App() {
       <HUD />
       <RockPopup />
       <MobileControls />
+      <Analytics />
     </SceneProvider>
   );
 }
