@@ -167,8 +167,8 @@ function MobileCameraTab() {
         <div className="hm-control-card">
           <div className="hm-control-visual"><TouchZoneGraphic zone="left" /></div>
           <div className="hm-control-info">
-            <div className="hm-control-label">Move Camera</div>
-            <div className="hm-control-desc">Drag on the <strong>left half</strong> of the 3D view to physically move the camera — forward, back, and side to side relative to where you're looking.</div>
+            <div className="hm-control-label">Move Camera &mdash; Joystick</div>
+            <div className="hm-control-desc">Touch anywhere on the <strong>left half</strong> to place a virtual joystick. Hold and tilt in any direction to move continuously — the farther from centre, the faster you go. Release to stop.</div>
           </div>
         </div>
         <div className="hm-control-card">

@@ -11,6 +11,8 @@ import Compass from './components/Compass';
 import HUD from './components/HUD';
 import LoadingScreen from './components/LoadingScreen';
 import RockPopup from './components/RockPopup';
+import MobileControls from './components/MobileControls';
+import { Analytics } from "@vercel/analytics/react";
 
 export default function App() {
   const containerRef = useRef(null);
@@ -29,6 +31,7 @@ export default function App() {
       <Compass />
       <HUD />
       <RockPopup />
+      <MobileControls />
     </SceneProvider>
   );
 }

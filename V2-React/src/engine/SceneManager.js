@@ -72,7 +72,10 @@ export class SceneManager {
     this._animId   = null;
     this._disposed = false;
     this._pinchDist = null;
-    this._touchHandlers = null;
+    this._touchHandlers     = null;
+    this._joystick          = null;   // null | { anchorX, anchorY, knobX, knobY, dx, dy }
+    this._joystickTouchId   = null;   // which touch ID drives the joystick
+    this._joystickChangeCbs = [];     // callbacks for joystick visual
   }
 
   // ──────────────────────────────────────────────
@@ -396,14 +399,30 @@ export class SceneManager {
       e.preventDefault();
       e.stopPropagation();
       for (const t of e.changedTouches) {
+        const zone = getZone(t.clientX);
         activeTouches.set(t.identifier, {
           x: t.clientX, y: t.clientY,
           startX: t.clientX, startY: t.clientY,
-          zone: getZone(t.clientX),
+          zone,
         });
+        // Start joystick for first left-zone touch
+        if (zone === 'left' && this._joystickTouchId === null) {
+          this._joystickTouchId = t.identifier;
+          this._joystick = {
+            anchorX: t.clientX, anchorY: t.clientY,
+            knobX:   t.clientX, knobY:   t.clientY,
+            dx: 0, dy: 0,
+          };
+          this._joystickChangeCbs.forEach((cb) => cb({ ...this._joystick }));
+        }
       }
-      // Initialise pinch tracking when 2+ fingers contact
+      // Initialise pinch tracking when 2+ fingers land; suspend joystick
       if (e.touches.length >= 2) {
+        if (this._joystick) {
+          this._joystick = null;
+          this._joystickTouchId = null;
+          this._joystickChangeCbs.forEach((cb) => cb(null));
+        }
         const a = e.touches[0], b = e.touches[1];
         const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
         this._pinchDist = Math.sqrt(dx * dx + dy * dy);
@@ -416,6 +435,12 @@ export class SceneManager {
 
       // ── Two-finger pinch zoom ──────────────────────────────
       if (e.touches.length >= 2) {
+        // Suspend joystick during pinch
+        if (this._joystick) {
+          this._joystick = null;
+          this._joystickTouchId = null;
+          this._joystickChangeCbs.forEach((cb) => cb(null));
+        }
         const a = e.touches[0], b = e.touches[1];
         const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
         const newDist = Math.sqrt(dx * dx + dy * dy);
@@ -452,27 +477,21 @@ export class SceneManager {
         state.y = t.clientY;
 
         if (state.zone === 'left') {
-          // ── Physical movement (like WASD) ─────────────────
-          const rect = canvas.getBoundingClientRect();
-          const dist = this.camera.position.distanceTo(this.controls.target);
-          const moveScale = Math.max(0.3, dist * 0.45 / rect.width);
-
-          const fwd = new THREE.Vector3();
-          this.camera.getWorldDirection(fwd);
-          fwd.y = 0; fwd.normalize();
-          const right = new THREE.Vector3()
-            .crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
-
-          // Swipe up (dy<0) → move forward; swipe right (dx>0) → strafe right
-          const moveX = (dx * right.x - dy * fwd.x) * moveScale;
-          const moveZ = (dx * right.z - dy * fwd.z) * moveScale;
-
-          const half = TERRAIN_SIZE / 2 * 1.5;
-          this.camera.position.x = Math.max(-half, Math.min(half, this.camera.position.x + moveX));
-          this.camera.position.z = Math.max(-half, Math.min(half, this.camera.position.z + moveZ));
-          this.controls.target.x  = Math.max(-half, Math.min(half, this.controls.target.x  + moveX));
-          this.controls.target.z  = Math.max(-half, Math.min(half, this.controls.target.z  + moveZ));
-
+          // ── Joystick: update state — movement applied in _animate ─
+          if (this._joystick && t.identifier === this._joystickTouchId) {
+            const maxR   = 65;
+            const offX   = t.clientX - this._joystick.anchorX;
+            const offY   = t.clientY - this._joystick.anchorY;
+            const dist   = Math.sqrt(offX * offX + offY * offY);
+            const clamp  = Math.min(dist, maxR);
+            const nx     = dist > 0.5 ? offX / dist : 0;
+            const ny     = dist > 0.5 ? offY / dist : 0;
+            this._joystick.dx    = nx * (clamp / maxR);
+            this._joystick.dy    = ny * (clamp / maxR);
+            this._joystick.knobX = this._joystick.anchorX + nx * clamp;
+            this._joystick.knobY = this._joystick.anchorY + ny * clamp;
+            this._joystickChangeCbs.forEach((cb) => cb({ ...this._joystick }));
+          }
         } else {
           // ── Orbit / rotate ────────────────────────────────
           const offset = this.camera.position.clone().sub(this.controls.target);
@@ -516,6 +535,12 @@ export class SceneManager {
             if (hit) this._clickCbs.forEach((cb) => cb(hit.point));
           }
         }
+        // Clear joystick when its controlling finger lifts
+        if (t.identifier === this._joystickTouchId) {
+          this._joystick = null;
+          this._joystickTouchId = null;
+          this._joystickChangeCbs.forEach((cb) => cb(null));
+        }
         activeTouches.delete(t.identifier);
       }
       if (e.touches.length < 2) this._pinchDist = null;
@@ -525,6 +550,9 @@ export class SceneManager {
       e.preventDefault();
       activeTouches.clear();
       this._pinchDist = null;
+      this._joystick = null;
+      this._joystickTouchId = null;
+      this._joystickChangeCbs.forEach((cb) => cb(null));
     };
 
     canvas.addEventListener('touchstart',  handleStart,  { passive: false, capture: true });
@@ -675,6 +703,13 @@ export class SceneManager {
     // Q/E — vertical
     if (k['KeyQ']) { dy -= speed * 0.6; }
     if (k['KeyE']) { dy += speed * 0.6; }
+
+    // Virtual joystick — continuous movement while finger is held
+    if (this._joystick && (this._joystick.dx !== 0 || this._joystick.dy !== 0)) {
+      const jSpeed = 180 * dt * (this._cameraSpeedMultiplier || 1.0);
+      dx += (this._joystick.dx * right.x - this._joystick.dy * fwd.x) * jSpeed;
+      dz += (this._joystick.dx * right.z - this._joystick.dy * fwd.z) * jSpeed;
+    }
 
     if (dx !== 0 || dy !== 0 || dz !== 0) {
       // Move both camera and orbit target together (physical movement)
@@ -850,6 +885,10 @@ export class SceneManager {
   onMarkerClick(cb) {
     this._markerClickCbs.push(cb);
     return () => { this._markerClickCbs = this._markerClickCbs.filter((c) => c !== cb); };
+  }
+  onJoystickChange(cb) {
+    this._joystickChangeCbs.push(cb);
+    return () => { this._joystickChangeCbs = this._joystickChangeCbs.filter((c) => c !== cb); };
   }
 
   // ──────────────────────────────────────────────
@@ -1516,6 +1555,8 @@ export class SceneManager {
     window.removeEventListener('resize', this._onResize);
     window.removeEventListener('keydown', this._onKeyDown);
     window.removeEventListener('keyup', this._onKeyUp);
+    this._joystick = null;
+    this._joystickChangeCbs = [];
     if (this._touchHandlers) {
       const canvas = this.renderer.domElement;
       const { handleStart, handleMove, handleEnd, handleCancel } = this._touchHandlers;
