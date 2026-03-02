@@ -7,6 +7,7 @@ import * as THREE from 'three';
 
 const vertexShader = /* glsl */ `
   attribute float aLayerIndex;
+  attribute float aLavaMask;
   attribute vec3  aVertColor;
 
   varying vec3  vWorldPos;
@@ -18,6 +19,7 @@ const vertexShader = /* glsl */ `
   varying vec2  vMicroUV;
   varying float vElevation;
   varying float vCamDist;
+  varying float vLavaMask;
 
   void main() {
     vec4 wp    = modelMatrix * vec4(position, 1.0);
@@ -25,6 +27,7 @@ const vertexShader = /* glsl */ `
     vWorldNormal = normalize(mat3(modelMatrix) * normal);
     vVertColor   = aVertColor;
     vLayerIndex  = aLayerIndex;
+    vLavaMask    = aLavaMask;
     vElevation   = wp.y;
 
     // detail UV at higher frequency for close-up normals
@@ -46,6 +49,7 @@ const fragmentShader = /* glsl */ `
   uniform sampler2D uAlbedoAtlas;
   uniform sampler2D uNormalAtlas;
   uniform sampler2D uRmhAtlas;     // R=roughness, G=AO, B=height
+  uniform sampler2D uLavaMask;
   uniform float uTexScale;
   uniform float uDetailScale;
   uniform float uDetailStrength;
@@ -56,6 +60,8 @@ const fragmentShader = /* glsl */ `
   uniform vec3  uFogColorFar;
   uniform float uFogDensity;
   uniform float uWaterLevel;
+  uniform float uIslandSize;
+  uniform float uUseLavaMaskTex;
   uniform float uTime;
   uniform vec3  uSkyColor;
 
@@ -79,6 +85,7 @@ const fragmentShader = /* glsl */ `
   varying vec2  vMicroUV;
   varying float vElevation;
   varying float vCamDist;
+  varying float vLavaMask;
 
   /* ── Atlas UV helper ─────────────────────── */
   vec2 atlasUV(vec2 baseUV, float layer) {
@@ -140,8 +147,9 @@ const fragmentShader = /* glsl */ `
     float distLOD = smoothstep(300.0, 1400.0, camDist);
 
     /* ── Close-up LOD tiers ── */
-    float closeUp  = smoothstep(150.0, 30.0, camDist);   // 1.0 when very close
-    float ultraClose = smoothstep(60.0, 10.0, camDist);  // 1.0 when extremely close
+    float closeUp    = smoothstep(150.0, 30.0, camDist);   // 1.0 when < 30 m
+    float ultraClose = smoothstep(60.0,  10.0, camDist);   // 1.0 when < 10 m
+    float extremeClose = smoothstep(4.0,  0.4, camDist);   // 1.0 when < 0.4 m (sub-metre)
 
     /* ── Sample PBR textures (tri-planar, layer-blended) ── */
     vec3 albLo = triPlanar(uAlbedoAtlas, vWorldPos, uTexScale, lo).rgb;
@@ -160,6 +168,14 @@ const fragmentShader = /* glsl */ `
     vec3 microHi = triPlanar(uAlbedoAtlas, vWorldPos, uTexScale * 9.0, hi).rgb;
     vec3 microColor = mix(microLo, microHi, t);
     texColor = mix(texColor, texColor * microColor * 1.5, ultraClose * 0.3);
+
+    // Sub-metre grain-level texture — visible at < 0.5 m (extremeClose)
+    // Reveals individual mineral grain clusters at the crystal scale
+    vec3 grainLo = triPlanar(uAlbedoAtlas, vWorldPos, uTexScale * 22.0, lo).rgb;
+    vec3 grainHi = triPlanar(uAlbedoAtlas, vWorldPos, uTexScale * 22.0, hi).rgb;
+    vec3 grainColor = mix(grainLo, grainHi, t);
+    // Multiply-blend preserves base colour while adding grain-boundary contrast
+    texColor = mix(texColor, texColor * grainColor * (1.7 + grainColor.r * 0.5), extremeClose * 0.60);
 
     // Macro-scale texture: lower frequency sample that persists at distance
     vec3 macroLo = triPlanar(uAlbedoAtlas, vWorldPos, uTexScale * 0.25, lo).rgb;
@@ -197,12 +213,63 @@ const fragmentShader = /* glsl */ `
     texNormal = normalize(texNormal + hfNrm * 0.25 * closeUp);
 
     /* ── Construct final world normal ── */
-    vec3 N = normalize(vWorldNormal + texNormal * 0.35);
+    float baseSlope = 1.0 - abs(normalize(vWorldNormal).y);
+    float cliffBoost = smoothstep(0.5, 0.85, baseSlope);
+    vec3 N = normalize(vWorldNormal + texNormal * (0.35 + cliffBoost * 0.25));
 
     /* ── Slope-based darkening + roughness boost ── */
     float slope = 1.0 - abs(N.y);
-    albedo *= mix(1.0, 0.68, smoothstep(0.3, 0.8, slope));
+    float rockWeight = clamp(smoothstep(0.26, 0.62, slope) * 1.4, 0.0, 1.0);
+    albedo *= mix(1.0, 0.62, rockWeight);
     roughness = clamp(roughness + slope * 0.15, 0.05, 1.0);
+
+    /* ── Procedural joint / cleavage / fracture network ────────────────
+       Two conjugate joint sets + bedding-parallel planes, scaled to
+       give geologically realistic spacing (0.2–2 m) for each layer.
+       Joints are clay/oxide-filled narrow dark seams visible from < 40 m.
+       Grain-boundary micro-fractures appear only at < 1 m.
+       ────────────────────────────────────────────────────────────────── */
+    {
+      // Primary joint frequency: tighter spacing for harder rocks
+      // lo=0 granite (hard,tight) → lo=5 alluvium (none)
+      float notSoil = smoothstep(5.0, 4.0, lo);   // zero in alluvium
+      float jFreq   = 1.8 + lo * 0.25;            // joints/m (granite ≈ 2, limestone ≈ 2.8)
+
+      // Set 1: principal joint (NE-SW shear — ~N50E)
+      float si1 = sin(vWorldPos.x * jFreq * 0.866 + vWorldPos.z * jFreq * 0.500);
+      // Set 2: conjugate joint (~N-S or NW-SE, offset ~60°)
+      float si2 = sin(vWorldPos.x * jFreq * 0.866 - vWorldPos.z * jFreq * 0.500 + 1.047);
+      // Set 3: bedding / foliation planes (dominant in schist, limestone, sandstone)
+      float bedFreq = 0.9 + lo * 0.14;
+      float si3 = sin(vWorldPos.z * bedFreq + lo * 0.85);
+
+      float apt = 0.045;   // joint half-aperture in sin units (~1 cm)
+      float j1  = smoothstep(apt, 0.0, abs(si1));
+      float j2  = smoothstep(apt, 0.0, abs(si2));
+      float j3  = smoothstep(apt * 1.8, 0.0, abs(si3)) * smoothstep(4.2, 0.5, lo);
+      float jointNet = max(j1, max(j2, j3));
+
+      // Clay / iron-oxide joint fill: dark with subtle warm tint
+      vec3 jointFillCol = albedo * 0.18 + vec3(0.044, 0.033, 0.022);
+      albedo = mix(albedo, jointFillCol, jointNet * ultraClose * notSoil * 0.88);
+
+      // ── Grain-boundary micro-fractures (cm scale, < 1 m camera) ──
+      float mFreq = 20.0 + lo * 2.0;   // grain boundary frequency per metre
+      float mg1 = smoothstep(0.012, 0.0, abs(sin(vWorldPos.x * mFreq * 0.72 + vWorldPos.z * mFreq * 0.69)));
+      float mg2 = smoothstep(0.012, 0.0, abs(sin(vWorldPos.x * mFreq * 0.69 - vWorldPos.z * mFreq * 0.72 + 2.1)));
+      float grainNet = max(mg1, mg2);
+      albedo = mix(albedo, albedo * 0.28 + vec3(0.011, 0.009, 0.007),
+                   grainNet * extremeClose * notSoil * 0.70);
+
+      // ── Mineral crystal facet highlights (coarse-grained rocks at < 0.5 m) ──
+      // Granite (lo≈0), Schist (lo≈3) — large crystal faces glint in sunlight
+      float coarseGrainMask = (1.0 - smoothstep(0.0, 1.5, lo))   // granite
+                            + smoothstep(2.5, 3.5, lo) * (1.0 - smoothstep(3.5, 4.5, lo)); // schist
+      float crystalH = triPlanar(uRmhAtlas, vWorldPos, uTexScale * 14.0, lo).b;
+      vec3 crystalFlash = vec3(0.72, 0.80, 0.95) * pow(crystalH, 5.0) * coarseGrainMask * 1.6;
+      albedo += crystalFlash * extremeClose;
+      roughness = mix(roughness, roughness * 0.55, pow(crystalH, 3.0) * coarseGrainMask * extremeClose);
+    }
 
     /* ── Wetness near water bodies ── */
     float wetness = 0.0;
@@ -237,8 +304,21 @@ const fragmentShader = /* glsl */ `
 
     // Wet terrain: darker albedo, lower roughness, higher F0
     albedo *= mix(1.0, 0.65, wetness);
+    // Canyon wetness darkening boost for steep river walls
+    float canyonDark = smoothstep(0.5, 0.85, slope) * smoothstep(0.35, 0.75, wetness);
+    albedo *= mix(1.0, 0.85, canyonDark);
     roughness = mix(roughness, 0.05, wetness * 0.9);
     float wetF0boost = wetness * 0.08;
+
+    // Procedural lava material override
+    vec2 lavaUV = clamp(vWorldPos.xz / uIslandSize + vec2(0.5), vec2(0.0), vec2(1.0));
+    float texLava = texture2D(uLavaMask, lavaUV).r * uUseLavaMaskTex;
+    float lavaMask = clamp(max(vLavaMask, texLava), 0.0, 1.0);
+    float lavaRockMask = smoothstep(0.4, 1.0, lavaMask);
+    vec3 darkBasalt = vec3(0.08, 0.07, 0.065);
+    albedo = mix(albedo, darkBasalt, lavaRockMask * 0.92);
+    roughness = mix(roughness, 0.9, lavaRockMask);
+    float metalness = mix(0.0, 0.05, lavaRockMask);
 
     /* ── PBR Cook-Torrance ── */
     vec3 V = normalize(cameraPosition - vWorldPos);
@@ -250,15 +330,15 @@ const fragmentShader = /* glsl */ `
     float NdotH = max(dot(N, H), 0.0);
     float HdotV = max(dot(H, V), 0.0);
 
-    // Non-metal rock: F0 ≈ 0.04 — boosted near water
-    vec3 F0 = vec3(0.04 + wetF0boost);
+    // Non-metal rock: F0 ≈ 0.04 — boosted near water and lava glassiness
+    vec3 F0 = vec3(0.04 + wetF0boost + lavaRockMask * 0.015);
 
     float D = distributionGGX(NdotH, roughness);
     float G = geometrySmith(NdotV, NdotL, roughness);
     vec3  F = fresnelSchlick(HdotV, F0);
 
     vec3 specular = (D * G * F) / (4.0 * NdotV * NdotL + 0.001);
-    vec3 kD = (1.0 - F) * (1.0 - 0.0); // metalness = 0
+    vec3 kD = (1.0 - F) * (1.0 - metalness);
 
     vec3 Lo = (kD * albedo / PI + specular) * uSunColor * NdotL;
 
@@ -274,6 +354,14 @@ const fragmentShader = /* glsl */ `
     vec3 rimColor = mix(uSkyColor, uSunColor, 0.35) * rimFresnel;
 
     vec3 color = ambient + Lo + envSpec + rimColor;
+
+    // Summit emissive glow (hot lava near summit with animated flicker)
+    float summitR = length(vWorldPos.xz);
+    float summitHeat = smoothstep(0.0, 80.0, 80.0 - summitR);
+    float hotLava = smoothstep(0.7, 1.0, lavaMask) * summitHeat;
+    float flicker = 0.92 + 0.08 * sin(uTime * 7.5 + vWorldPos.x * 0.08 + vWorldPos.z * 0.06);
+    vec3 emissiveColor = vec3(1.0, 0.35, 0.05) * hotLava * 0.6 * flicker;
+    color += emissiveColor;
 
     /* ── Height-based micro-shadow (cavity occlusion) ── */
     float cavity = smoothstep(0.2, 0.5, heightVal);
@@ -291,6 +379,13 @@ const fragmentShader = /* glsl */ `
 `;
 
 export function createTerrainMaterial(albedoAtlas, normalAtlas, rmhAtlas, opts = {}) {
+  let lavaMaskTexture = opts.lavaMask;
+  if (!lavaMaskTexture) {
+    const px = new Uint8Array([0, 0, 0, 255]);
+    lavaMaskTexture = new THREE.DataTexture(px, 1, 1, THREE.RGBAFormat);
+    lavaMaskTexture.needsUpdate = true;
+  }
+
   // Build lake uniform array (vec4 each: cx, cz, rx, rz)
   const lakes = opts.lakes || [];
   const lakeData = [];
@@ -319,6 +414,7 @@ export function createTerrainMaterial(albedoAtlas, normalAtlas, rmhAtlas, opts =
       uAlbedoAtlas:    { value: albedoAtlas },
       uNormalAtlas:    { value: normalAtlas },
       uRmhAtlas:       { value: rmhAtlas },
+      uLavaMask:       { value: lavaMaskTexture },
       uTexScale:       { value: opts.texScale       ?? 0.018 },
       uDetailScale:    { value: opts.detailScale    ?? 0.06 },
       uDetailStrength: { value: opts.detailStrength ?? 0.35 },
@@ -330,6 +426,8 @@ export function createTerrainMaterial(albedoAtlas, normalAtlas, rmhAtlas, opts =
       uFogColorFar:    { value: opts.fogColorFar    ?? new THREE.Color(0.72, 0.80, 0.90) },
       uFogDensity:     { value: opts.fogDensity     ?? 0.00028 },
       uWaterLevel:     { value: opts.waterLevel     ?? 38 },
+      uIslandSize:     { value: opts.islandSize     ?? 2000 },
+      uUseLavaMaskTex: { value: opts.lavaMask ? 1.0 : 0.0 },
       uTime:           { value: 0 },
       uLakes:          { value: lakeData },
       uLakeCount:      { value: lakes.length },

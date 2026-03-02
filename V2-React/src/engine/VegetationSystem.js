@@ -5,40 +5,10 @@
 //  for performance.
 // ================================================================
 import * as THREE from 'three';
-import { TERRAIN_SIZE, SEGMENTS, WATER_LEVEL, getLayerAtElevation } from '../config/geology';
-import { LAKES, RIVERS, FARM } from './TerrainGenerator';
 import { createNoise2D } from './noise';
 
-/* ── Dense Catmull-Rom river paths for accurate exclusion zones ── */
-function _crVal(p0, p1, p2, p3, t) {
-  const t2 = t * t, t3 = t2 * t;
-  return 0.5 * ((2 * p1) + (-p0 + p2) * t
-    + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2
-    + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
-}
-let _denseRivers = null;
-function getDenseRivers() {
-  if (_denseRivers) return _denseRivers;
-  _denseRivers = RIVERS.map(river => {
-    const pts = river.points;
-    const dense = [];
-    for (let i = 0; i < pts.length - 1; i++) {
-      const p0 = pts[Math.max(0, i - 1)], p1 = pts[i];
-      const p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
-      for (let j = 0; j < 8; j++) {
-        const t = j / 8;
-        dense.push({
-          x: _crVal(p0.x, p1.x, p2.x, p3.x, t),
-          z: _crVal(p0.z, p1.z, p2.z, p3.z, t),
-        });
-      }
-    }
-    dense.push({ x: pts[pts.length - 1].x, z: pts[pts.length - 1].z });
-    return { ...river, densePoints: dense };
-  });
-  return _denseRivers;
-}
-
+/* -- Per-call island context (set at the top of createVegetation) --- */
+let _size, _segments, _waterLevel, _lakes, _denseRivers, _farm, _getLayerByElevation, _islandDef;
 const _m  = new THREE.Matrix4();
 const _p  = new THREE.Vector3();
 const _q  = new THREE.Quaternion();
@@ -47,12 +17,12 @@ const _up = new THREE.Vector3(0, 1, 0);
 
 /* ── Heightmap interpolation helper ────────── */
 function makeHeightFn(hm) {
-  const s = SEGMENTS + 1;
+  const s = _segments + 1;
   return (wx, wz) => {
-    const gx = (wx + TERRAIN_SIZE / 2) / TERRAIN_SIZE * SEGMENTS;
-    const gz = (wz + TERRAIN_SIZE / 2) / TERRAIN_SIZE * SEGMENTS;
-    const x0 = Math.max(0, Math.min(SEGMENTS - 1, gx | 0));
-    const z0 = Math.max(0, Math.min(SEGMENTS - 1, gz | 0));
+    const gx = (wx + _size / 2) / _size * _segments;
+    const gz = (wz + _size / 2) / _size * _segments;
+    const x0 = Math.max(0, Math.min(_segments - 1, gx | 0));
+    const z0 = Math.max(0, Math.min(_segments - 1, gz | 0));
     const fx = gx - x0, fz = gz - z0;
     return hm[z0 * s + x0] * (1 - fx) * (1 - fz) + hm[z0 * s + x0 + 1] * fx * (1 - fz)
          + hm[(z0 + 1) * s + x0] * (1 - fx) * fz + hm[(z0 + 1) * s + x0 + 1] * fx * fz;
@@ -69,7 +39,7 @@ function getSlope(getH, wx, wz) {
 
 /* ── Check if point is in a lake ─── */
 function isInLake(wx, wz, margin = 10) {
-  for (const lake of LAKES) {
+  for (const lake of _lakes) {
     const dx = (wx - lake.cx) / (lake.rx + margin);
     const dz = (wz - lake.cz) / (lake.rz + margin);
     if (dx * dx + dz * dz < 1) return true;
@@ -79,7 +49,7 @@ function isInLake(wx, wz, margin = 10) {
 
 /* ── Check if point is inside a river channel (dense Catmull-Rom path) ─── */
 function isInRiver(wx, wz, margin = 12) {
-  for (const river of getDenseRivers()) {
+  for (const river of _denseRivers) {
     const hw = river.width / 2 + margin;
     const pts = river.densePoints;
     for (let i = 0; i < pts.length - 1; i++) {
@@ -99,9 +69,10 @@ function isInRiver(wx, wz, margin = 12) {
 
 /* ── Check if point is inside the farm compound ─── */
 function isInFarm(wx, wz, margin = 10) {
-  const dx = wx - FARM.cx;
-  const dz = wz - FARM.cz;
-  return Math.sqrt(dx * dx + dz * dz) < FARM.radius + margin;
+  if (!_farm) return false;
+  const dx = wx - _farm.cx;
+  const dz = wz - _farm.cz;
+  return Math.sqrt(dx * dx + dz * dz) < _farm.radius + margin;
 }
 
 /* ── Vegetation viability (uses geology vegetationDensity + slope) ─── *
@@ -109,20 +80,80 @@ function isInFarm(wx, wz, margin = 10) {
  *  Returns true probabilistically — call once per placement attempt.  */
 function vegetationCheck(layer, slope) {
   const density = layer.vegetationDensity ?? 0;
-  // Slope strongly reduces viability: at slope 0 → full density,
-  // at slope 0.6 → density × 0.1, above 0.7 → near zero
-  const slopeFactor = Math.max(0, 1 - slope * 1.5);
+  if (slope > 1.15) return false;
+  // Cinematic jungle override: keep viability high on steep non-cliff terrain
+  const slopeFactor = slope > 0.85 ? 0.6 : 1.0;
   return Math.random() < density * slopeFactor;
+}
+
+function isInVentField(wx, wz) {
+  const vent = _islandDef?.provinces?.ventField;
+  if (!vent) return false;
+  const dx = wx - vent.cx;
+  const dz = wz - vent.cz;
+  return Math.sqrt(dx * dx + dz * dz) <= vent.suppressionRadius;
+}
+
+function isInSummitZone(wx, wz) {
+  return Math.sqrt(wx * wx + wz * wz) < 80;
+}
+
+function isInLavaFlow(wx, wz) {
+  if (!_islandDef?.getLavaFlowMask) return false;
+  return _islandDef.getLavaFlowMask(wx, wz) > 0.35;
+}
+
+function isCanyonWall(getH, wx, wz) {
+  return isInRiver(wx, wz, 16) && getSlope(getH, wx, wz) > 0.5;
+}
+
+function computeJungleMask(getH, wx, wz, h, slope) {
+  const half = _size / 2;
+  const nx = wx / half;
+  const nz = wz / half;
+  const ellipR = Math.sqrt((nx / 1.0) ** 2 + (nz / 0.875) ** 2);
+  const inElevBand = h >= (_waterLevel + 80) && h <= (_waterLevel + 420);
+  if (!inElevBand || ellipR >= 0.92 || isInVentField(wx, wz)) return 0;
+  if (isInLavaFlow(wx, wz) || isInSummitZone(wx, wz) || slope > 0.95 || isCanyonWall(getH, wx, wz)) return 0;
+  let mask = 1.0;
+
+  const lostCity = _islandDef?.structures?.lostCity;
+  if (lostCity) {
+    const dx = wx - lostCity.cx;
+    const dz = wz - lostCity.cz;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+
+    if (dist < lostCity.plazaRadius * 1.2) mask *= 0.28;
+
+    if (dist > lostCity.plateauRadius && dist < lostCity.outerDistrictRadius) {
+      mask *= 2.0;
+    }
+
+    const stoneRingInner = lostCity.plazaRadius * 1.2;
+    const stoneRingOuter = lostCity.plateauRadius * 0.95;
+    if (dist >= stoneRingInner && dist <= stoneRingOuter) {
+      if (slope < 0.7) {
+        const crackNoise = 0.55 + Math.abs(Math.sin(wx * 0.09) * Math.cos(wz * 0.07)) * 0.65;
+        mask *= crackNoise;
+      } else {
+        mask *= 0.35;
+      }
+    }
+  }
+
+  if (slope > 0.85) mask *= 0.6;
+  if (isInLake(wx, wz, 25) || isInRiver(wx, wz, 25)) mask *= 0.85;
+  return mask;
 }
 
 /* ── Check proximity to any water body (lakes or river — dense path) ─── */
 function nearWaterBody(wx, wz, range = 60) {
-  for (const lake of LAKES) {
+  for (const lake of _lakes) {
     const dx = (wx - lake.cx) / (lake.rx + range);
     const dz = (wz - lake.cz) / (lake.rz + range);
     if (dx * dx + dz * dz < 1) return true;
   }
-  for (const river of getDenseRivers()) {
+  for (const river of _denseRivers) {
     const hw = river.width / 2 + range;
     const pts = river.densePoints;
     for (let i = 0; i < pts.length - 1; i++) {
@@ -145,7 +176,14 @@ function nearWaterBody(wx, wz, range = 60) {
  * @param {Function} noise
  * @returns {THREE.Group}
  */
-export function createVegetation(hm, noise) {
+export function createVegetation(hm, noise, islandDef) {
+  const { size, segments, waterLevel } = islandDef.terrain;
+  _size = size; _segments = segments; _waterLevel = waterLevel;
+  _islandDef = islandDef;
+  _lakes = islandDef.lakes;
+  _farm  = islandDef.farm;
+  _denseRivers = islandDef.rivers.map(r => ({ ...r, densePoints: islandDef.getDenseRiverPath(r) }));
+  _getLayerByElevation = h => islandDef.getLayerByElevation(h);
   const group = new THREE.Group();
   const scatter = createNoise2D(777);
   const getH = makeHeightFn(hm);
@@ -153,9 +191,10 @@ export function createVegetation(hm, noise) {
   addTrees(group, getH, noise, scatter);
   addBushes(group, getH, noise, scatter);
   addRocks(group, getH, noise, scatter);
-  addFarmCompound(group, getH);
+  if (_farm) addFarmCompound(group, getH);
   addMountainVegetation(group, getH, noise, scatter);
   addRiparianVegetation(group, getH, noise, scatter);
+  addCinematicJungle(group, getH, noise, scatter);
   addGrass(group, getH, noise, scatter);
 
   // Expose windmill blades for animation
@@ -168,6 +207,133 @@ export function createVegetation(hm, noise) {
   });
 
   return group;
+}
+
+/* =============================================================
+   CINEMATIC JUNGLE LAYERS — canopy, understory, ferns
+   ============================================================= */
+function addCinematicJungle(group, getH, noise, scatter) {
+  // Tier 1: Canopy trees
+  const canopyCount = 2400;
+  const trunkGeo = new THREE.CylinderGeometry(0.35, 0.7, 10, 8);
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x3d2919, roughness: 0.93 });
+  const crownA = new THREE.SphereGeometry(5.2, 12, 10); crownA.translate(0, 12, 0);
+  const crownB = new THREE.SphereGeometry(4.0, 10, 8);  crownB.translate(2.4, 13.5, 1.2);
+  const crownC = new THREE.SphereGeometry(3.8, 10, 8);  crownC.translate(-2.0, 13.0, -1.4);
+  const canopyGeo = mergeBufferGeometries([crownA, crownB, crownC]);
+  const canopyMat = new THREE.MeshStandardMaterial({ color: 0x2b7a2a, roughness: 0.8 });
+
+  const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, canopyCount);
+  const canopyMesh = new THREE.InstancedMesh(canopyGeo, canopyMat, canopyCount);
+  trunkMesh.castShadow = true;
+  canopyMesh.castShadow = true;
+  canopyMesh.receiveShadow = true;
+
+  let canopyPlaced = 0;
+  for (let attempt = 0; attempt < canopyCount * 8 && canopyPlaced < canopyCount; attempt++) {
+    const wx = (Math.random() - 0.5) * _size * 0.95;
+    const wz = (Math.random() - 0.5) * _size * 0.95;
+    const h = getH(wx, wz);
+    const slope = getSlope(getH, wx, wz);
+    const baseMask = computeJungleMask(getH, wx, wz, h, slope);
+    if (baseMask <= 0) continue;
+
+    let density = baseMask * 4.0;
+    const lagDx = wx - (_islandDef?.provinces?.lagoon?.cx ?? 0);
+    const lagDz = wz - (_islandDef?.provinces?.lagoon?.cz ?? 0);
+    const lagDist = Math.sqrt(lagDx * lagDx + lagDz * lagDz);
+    if (lagDist < 60) density *= 2.2;
+    if (isInVentField(wx, wz)) density *= 0.5;
+
+    density *= 0.65 + Math.max(0, scatter(wx * 0.007, wz * 0.007));
+    if (Math.random() > Math.min(1, density * 0.28)) continue;
+
+    const scale = (1.1 + Math.random() * 1.25) * (lagDist < 60 ? 1.18 : 1.0);
+    _p.set(wx, h - 0.5, wz);
+    _q.setFromAxisAngle(_up, Math.random() * Math.PI * 2);
+    _s.set(scale, scale * (1.55 + Math.random() * 0.45), scale);
+    _m.compose(_p, _q, _s);
+    trunkMesh.setMatrixAt(canopyPlaced, _m);
+    canopyMesh.setMatrixAt(canopyPlaced, _m);
+    canopyMesh.setColorAt(canopyPlaced, new THREE.Color(0.10 + Math.random() * 0.08, 0.36 + Math.random() * 0.22, 0.09 + Math.random() * 0.08));
+    canopyPlaced++;
+  }
+  trunkMesh.count = canopyPlaced;
+  canopyMesh.count = canopyPlaced;
+  trunkMesh.instanceMatrix.needsUpdate = true;
+  canopyMesh.instanceMatrix.needsUpdate = true;
+  if (canopyMesh.instanceColor) canopyMesh.instanceColor.needsUpdate = true;
+  group.add(trunkMesh, canopyMesh);
+
+  // Tier 2: Mid understory
+  const understoryCount = Math.floor(canopyPlaced * 1.6);
+  const underGeo = new THREE.SphereGeometry(2.2, 10, 8);
+  underGeo.scale(1.0, 1.35, 1.0);
+  const underMat = new THREE.MeshStandardMaterial({ color: 0x2f8a34, roughness: 0.86 });
+  const underMesh = new THREE.InstancedMesh(underGeo, underMat, understoryCount);
+  underMesh.castShadow = true;
+
+  let ui = 0;
+  for (let attempt = 0; attempt < understoryCount * 6 && ui < understoryCount; attempt++) {
+    const wx = (Math.random() - 0.5) * _size * 0.95;
+    const wz = (Math.random() - 0.5) * _size * 0.95;
+    const h = getH(wx, wz);
+    const slope = getSlope(getH, wx, wz);
+    const baseMask = computeJungleMask(getH, wx, wz, h, slope);
+    if (baseMask <= 0 || isInLake(wx, wz, 10) || isInRiver(wx, wz, 12)) continue;
+    let density = baseMask * 4.0 * 1.6;
+    if (isInVentField(wx, wz)) density *= 0.5;
+    if (Math.random() > Math.min(1, density * 0.24)) continue;
+
+    const scale = 0.6 + Math.random() * 1.5;
+    _p.set(wx, h, wz);
+    _q.setFromAxisAngle(_up, Math.random() * Math.PI * 2);
+    _s.set(scale, scale * (0.85 + Math.random() * 0.45), scale);
+    _m.compose(_p, _q, _s);
+    underMesh.setMatrixAt(ui, _m);
+    underMesh.setColorAt(ui, new THREE.Color(0.12 + Math.random() * 0.08, 0.34 + Math.random() * 0.22, 0.10 + Math.random() * 0.08));
+    ui++;
+  }
+  underMesh.count = ui;
+  underMesh.instanceMatrix.needsUpdate = true;
+  if (underMesh.instanceColor) underMesh.instanceColor.needsUpdate = true;
+  group.add(underMesh);
+
+  // Tier 3: Fern ground layer
+  const fernCount = Math.floor(canopyPlaced * 2.2);
+  const fernGeo = new THREE.PlaneGeometry(1.2, 2.2, 1, 2);
+  fernGeo.translate(0, 1.1, 0);
+  const fernMat = new THREE.MeshStandardMaterial({ color: 0x3a8f3a, roughness: 0.9, side: THREE.DoubleSide });
+  const fernMesh = new THREE.InstancedMesh(fernGeo, fernMat, fernCount);
+  fernMesh.receiveShadow = true;
+
+  let fi = 0;
+  for (let attempt = 0; attempt < fernCount * 6 && fi < fernCount; attempt++) {
+    const wx = (Math.random() - 0.5) * _size * 0.95;
+    const wz = (Math.random() - 0.5) * _size * 0.95;
+    const h = getH(wx, wz);
+    const slope = getSlope(getH, wx, wz);
+    if (slope > 0.95) continue;
+    const baseMask = computeJungleMask(getH, wx, wz, h, slope);
+    if (baseMask <= 0 || isInLake(wx, wz, 5) || isInRiver(wx, wz, 8) || isInLavaFlow(wx, wz)) continue;
+
+    let density = baseMask * 4.0 * 2.2;
+    if (isInVentField(wx, wz)) density *= 0.5;
+    if (Math.random() > Math.min(1, density * 0.22)) continue;
+
+    const scale = 0.6 + Math.random() * 1.4;
+    _p.set(wx, h + 0.02, wz);
+    _q.setFromAxisAngle(_up, Math.random() * Math.PI * 2);
+    _s.set(scale * (0.8 + Math.random() * 0.3), scale, scale * (0.8 + Math.random() * 0.3));
+    _m.compose(_p, _q, _s);
+    fernMesh.setMatrixAt(fi, _m);
+    fernMesh.setColorAt(fi, new THREE.Color(0.16 + Math.random() * 0.08, 0.45 + Math.random() * 0.2, 0.14 + Math.random() * 0.08));
+    fi++;
+  }
+  fernMesh.count = fi;
+  fernMesh.instanceMatrix.needsUpdate = true;
+  if (fernMesh.instanceColor) fernMesh.instanceColor.needsUpdate = true;
+  group.add(fernMesh);
 }
 
 /* =============================================================
@@ -203,13 +369,13 @@ function addTrees(group, getH, noise, scatter) {
 
   let pi = 0;
   for (let attempt = 0; attempt < pineCount * 8 && pi < pineCount; attempt++) {
-    const wx = (Math.random() - 0.5) * TERRAIN_SIZE * 0.9;
-    const wz = (Math.random() - 0.5) * TERRAIN_SIZE * 0.9;
+    const wx = (Math.random() - 0.5) * _size * 0.9;
+    const wz = (Math.random() - 0.5) * _size * 0.9;
     const h = getH(wx, wz);
-    if (h < WATER_LEVEL + 4 || isInLake(wx, wz, 20) || isInRiver(wx, wz, 20) || isInFarm(wx, wz, 15)) continue;
+    if (h < _waterLevel + 4 || isInLake(wx, wz, 20) || isInRiver(wx, wz, 20) || isInFarm(wx, wz, 15)) continue;
     const slope = getSlope(getH, wx, wz);
     if (slope > 0.55) continue;
-    const layer = getLayerAtElevation(h);
+    const layer = _getLayerByElevation(h);
     if (!vegetationCheck(layer, slope)) continue;
     const density = scatter(wx * 0.006, wz * 0.006);
     if (density < -0.1) continue;
@@ -264,13 +430,13 @@ function addTrees(group, getH, noise, scatter) {
 
   let oi = 0;
   for (let attempt = 0; attempt < oakCount * 8 && oi < oakCount; attempt++) {
-    const wx = (Math.random() - 0.5) * TERRAIN_SIZE * 0.88;
-    const wz = (Math.random() - 0.5) * TERRAIN_SIZE * 0.88;
+    const wx = (Math.random() - 0.5) * _size * 0.88;
+    const wz = (Math.random() - 0.5) * _size * 0.88;
     const h = getH(wx, wz);
-    if (h < WATER_LEVEL + 3 || isInLake(wx, wz, 25) || isInRiver(wx, wz, 15) || isInFarm(wx, wz, 15)) continue;
+    if (h < _waterLevel + 3 || isInLake(wx, wz, 25) || isInRiver(wx, wz, 15) || isInFarm(wx, wz, 15)) continue;
     const slope = getSlope(getH, wx, wz);
     if (slope > 0.4) continue;
-    const layer = getLayerAtElevation(h);
+    const layer = _getLayerByElevation(h);
     if (!vegetationCheck(layer, slope)) continue;
     const density = scatter(wx * 0.008, wz * 0.008);
     if (density < 0.0) continue;
@@ -320,16 +486,16 @@ function addTrees(group, getH, noise, scatter) {
 
   let bi = 0;
   for (let attempt = 0; attempt < birchCount * 8 && bi < birchCount; attempt++) {
-    const wx = (Math.random() - 0.5) * TERRAIN_SIZE * 0.85;
-    const wz = (Math.random() - 0.5) * TERRAIN_SIZE * 0.85;
+    const wx = (Math.random() - 0.5) * _size * 0.85;
+    const wz = (Math.random() - 0.5) * _size * 0.85;
     const h = getH(wx, wz);
-    if (h < WATER_LEVEL + 5 || isInLake(wx, wz, 18) || isInRiver(wx, wz, 15) || isInFarm(wx, wz, 10)) continue;
+    if (h < _waterLevel + 5 || isInLake(wx, wz, 18) || isInRiver(wx, wz, 15) || isInFarm(wx, wz, 10)) continue;
     const slope = getSlope(getH, wx, wz);
     if (slope > 0.35) continue;
-    const layer = getLayerAtElevation(h);
+    const layer = _getLayerByElevation(h);
     if (!vegetationCheck(layer, slope)) continue;
     // Birch near lakes or rivers
-    const nearLake = LAKES.some((l) => {
+    const nearLake = _lakes.some((l) => {
       const dx = (wx - l.cx) / (l.rx * 2);
       const dz = (wz - l.cz) / (l.rz * 2);
       return dx * dx + dz * dz < 1;
@@ -371,12 +537,12 @@ function addBushes(group, getH, noise, scatter) {
 
   let idx = 0;
   for (let attempt = 0; attempt < count * 6 && idx < count; attempt++) {
-    const wx = (Math.random() - 0.5) * TERRAIN_SIZE * 0.88;
-    const wz = (Math.random() - 0.5) * TERRAIN_SIZE * 0.88;
+    const wx = (Math.random() - 0.5) * _size * 0.88;
+    const wz = (Math.random() - 0.5) * _size * 0.88;
     const h = getH(wx, wz);
-    if (h < WATER_LEVEL + 2 || isInLake(wx, wz, 8) || isInRiver(wx, wz, 10) || isInFarm(wx, wz, 5)) continue;
+    if (h < _waterLevel + 2 || isInLake(wx, wz, 8) || isInRiver(wx, wz, 10) || isInFarm(wx, wz, 5)) continue;
     const slope = getSlope(getH, wx, wz);
-    const layer = getLayerAtElevation(h);
+    const layer = _getLayerByElevation(h);
     if (!vegetationCheck(layer, slope)) continue;
     if (scatter(wx * 0.015, wz * 0.015) < -0.3) continue;
 
@@ -412,10 +578,10 @@ function addRocks(group, getH, noise, scatter) {
 
   let ri = 0;
   for (let attempt = 0; attempt < count * 6 && ri < count; attempt++) {
-    const wx = (Math.random() - 0.5) * TERRAIN_SIZE * 0.9;
-    const wz = (Math.random() - 0.5) * TERRAIN_SIZE * 0.9;
+    const wx = (Math.random() - 0.5) * _size * 0.9;
+    const wz = (Math.random() - 0.5) * _size * 0.9;
     const h = getH(wx, wz);
-    if (h < WATER_LEVEL + 1 || isInLake(wx, wz, 5) || isInRiver(wx, wz, 10) || isInFarm(wx, wz, 0)) continue;
+    if (h < _waterLevel + 1 || isInLake(wx, wz, 5) || isInRiver(wx, wz, 10) || isInFarm(wx, wz, 0)) continue;
 
     const slope = getSlope(getH, wx, wz);
     if (slope < 0.15 && Math.random() > 0.12) continue;
@@ -443,8 +609,8 @@ function addRocks(group, getH, noise, scatter) {
    fields, hay bales, water trough, animal pen, windmill
    ============================================================= */
 function addFarmCompound(group, getH) {
-  const fcx = FARM.cx;
-  const fcz = FARM.cz;
+  const fcx = _farm.cx;
+  const fcz = _farm.cz;
   const angle = Math.PI * 0.15;
   const cosA = Math.cos(angle);
   const sinA = Math.sin(angle);
@@ -1176,10 +1342,10 @@ function addMountainVegetation(group, getH, noise, scatter) {
 
   let si = 0;
   for (let attempt = 0; attempt < shrubCount * 8 && si < shrubCount; attempt++) {
-    const wx = (Math.random() - 0.5) * TERRAIN_SIZE * 0.88;
-    const wz = (Math.random() - 0.5) * TERRAIN_SIZE * 0.88;
+    const wx = (Math.random() - 0.5) * _size * 0.88;
+    const wz = (Math.random() - 0.5) * _size * 0.88;
     const h = getH(wx, wz);
-    if (h < 130 || h < WATER_LEVEL + 5) continue;
+    if (h < 130 || h < _waterLevel + 5) continue;
     if (isInLake(wx, wz, 10) || isInRiver(wx, wz, 10) || isInFarm(wx, wz, 10)) continue;
     const slope = getSlope(getH, wx, wz);
     if (slope > 0.7) continue;
@@ -1213,10 +1379,10 @@ function addMountainVegetation(group, getH, noise, scatter) {
 
   let fi = 0;
   for (let attempt = 0; attempt < flowerCount * 8 && fi < flowerCount; attempt++) {
-    const wx = (Math.random() - 0.5) * TERRAIN_SIZE * 0.85;
-    const wz = (Math.random() - 0.5) * TERRAIN_SIZE * 0.85;
+    const wx = (Math.random() - 0.5) * _size * 0.85;
+    const wz = (Math.random() - 0.5) * _size * 0.85;
     const h = getH(wx, wz);
-    if (h < 120 || h < WATER_LEVEL + 5) continue;
+    if (h < 120 || h < _waterLevel + 5) continue;
     if (isInLake(wx, wz, 8) || isInRiver(wx, wz, 8) || isInFarm(wx, wz, 5)) continue;
     const slope = getSlope(getH, wx, wz);
     if (slope > 0.5) continue;
@@ -1261,10 +1427,10 @@ function addMountainVegetation(group, getH, noise, scatter) {
 
   let mgi = 0;
   for (let attempt = 0; attempt < mGrassCount * 4 && mgi < mGrassCount; attempt++) {
-    const wx = (Math.random() - 0.5) * TERRAIN_SIZE * 0.88;
-    const wz = (Math.random() - 0.5) * TERRAIN_SIZE * 0.88;
+    const wx = (Math.random() - 0.5) * _size * 0.88;
+    const wz = (Math.random() - 0.5) * _size * 0.88;
     const h = getH(wx, wz);
-    if (h < 125 || h < WATER_LEVEL + 4) continue;
+    if (h < 125 || h < _waterLevel + 4) continue;
     if (isInLake(wx, wz, 5) || isInRiver(wx, wz, 8) || isInFarm(wx, wz, 5)) continue;
     const slope = getSlope(getH, wx, wz);
     if (slope > 0.65) continue;
@@ -1308,10 +1474,10 @@ function addRiparianVegetation(group, getH, noise, scatter) {
 
   let pi2 = 0;
   for (let attempt = 0; attempt < patchCount * 6 && pi2 < patchCount; attempt++) {
-    const wx = (Math.random() - 0.5) * TERRAIN_SIZE * 0.88;
-    const wz = (Math.random() - 0.5) * TERRAIN_SIZE * 0.88;
+    const wx = (Math.random() - 0.5) * _size * 0.88;
+    const wz = (Math.random() - 0.5) * _size * 0.88;
     const h = getH(wx, wz);
-    if (h < WATER_LEVEL + 1.5 || isInLake(wx, wz, 5) || isInRiver(wx, wz, 8) || isInFarm(wx, wz, 5)) continue;
+    if (h < _waterLevel + 1.5 || isInLake(wx, wz, 5) || isInRiver(wx, wz, 8) || isInFarm(wx, wz, 5)) continue;
     if (!nearWaterBody(wx, wz, 55)) continue;
     const slope = getSlope(getH, wx, wz);
     if (slope > 0.4) continue;
@@ -1343,10 +1509,10 @@ function addRiparianVegetation(group, getH, noise, scatter) {
 
   let fi2 = 0;
   for (let attempt = 0; attempt < flowerCount * 6 && fi2 < flowerCount; attempt++) {
-    const wx = (Math.random() - 0.5) * TERRAIN_SIZE * 0.88;
-    const wz = (Math.random() - 0.5) * TERRAIN_SIZE * 0.88;
+    const wx = (Math.random() - 0.5) * _size * 0.88;
+    const wz = (Math.random() - 0.5) * _size * 0.88;
     const h = getH(wx, wz);
-    if (h < WATER_LEVEL + 2 || isInLake(wx, wz, 8) || isInRiver(wx, wz, 10) || isInFarm(wx, wz, 5)) continue;
+    if (h < _waterLevel + 2 || isInLake(wx, wz, 8) || isInRiver(wx, wz, 10) || isInFarm(wx, wz, 5)) continue;
     if (!nearWaterBody(wx, wz, 45)) continue;
     const slope = getSlope(getH, wx, wz);
     if (slope > 0.35) continue;
@@ -1387,10 +1553,10 @@ function addRiparianVegetation(group, getH, noise, scatter) {
 
   let ri2 = 0;
   for (let attempt = 0; attempt < reedCount * 8 && ri2 < reedCount; attempt++) {
-    const wx = (Math.random() - 0.5) * TERRAIN_SIZE * 0.88;
-    const wz = (Math.random() - 0.5) * TERRAIN_SIZE * 0.88;
+    const wx = (Math.random() - 0.5) * _size * 0.88;
+    const wz = (Math.random() - 0.5) * _size * 0.88;
     const h = getH(wx, wz);
-    if (h < WATER_LEVEL + 0.5) continue;
+    if (h < _waterLevel + 0.5) continue;
     if (isInLake(wx, wz, 0) || isInRiver(wx, wz, 0)) continue;
     if (!nearWaterBody(wx, wz, 18)) continue;
     const slope = getSlope(getH, wx, wz);
@@ -1424,10 +1590,10 @@ function addRiparianVegetation(group, getH, noise, scatter) {
 
   let rsi = 0;
   for (let attempt = 0; attempt < rShrubCount * 6 && rsi < rShrubCount; attempt++) {
-    const wx = (Math.random() - 0.5) * TERRAIN_SIZE * 0.88;
-    const wz = (Math.random() - 0.5) * TERRAIN_SIZE * 0.88;
+    const wx = (Math.random() - 0.5) * _size * 0.88;
+    const wz = (Math.random() - 0.5) * _size * 0.88;
     const h = getH(wx, wz);
-    if (h < WATER_LEVEL + 2 || isInLake(wx, wz, 10) || isInRiver(wx, wz, 12) || isInFarm(wx, wz, 8)) continue;
+    if (h < _waterLevel + 2 || isInLake(wx, wz, 10) || isInRiver(wx, wz, 12) || isInFarm(wx, wz, 8)) continue;
     if (!nearWaterBody(wx, wz, 50)) continue;
     const slope = getSlope(getH, wx, wz);
     if (slope > 0.35) continue;
@@ -1470,10 +1636,10 @@ function addGrass(group, getH, noise, scatter) {
 
   let gi = 0;
   for (let attempt = 0; attempt < grassCount * 4 && gi < grassCount; attempt++) {
-    const wx = (Math.random() - 0.5) * TERRAIN_SIZE * 0.88;
-    const wz = (Math.random() - 0.5) * TERRAIN_SIZE * 0.88;
+    const wx = (Math.random() - 0.5) * _size * 0.88;
+    const wz = (Math.random() - 0.5) * _size * 0.88;
     const h = getH(wx, wz);
-    if (h < WATER_LEVEL + 2 || isInLake(wx, wz, 5) || isInRiver(wx, wz, 10) || isInFarm(wx, wz, 5)) continue;
+    if (h < _waterLevel + 2 || isInLake(wx, wz, 5) || isInRiver(wx, wz, 10) || isInFarm(wx, wz, 5)) continue;
     const slope = getSlope(getH, wx, wz);
     if (slope > 0.6) continue;
     // Thin out on very high bare rock

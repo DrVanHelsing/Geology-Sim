@@ -9,7 +9,6 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { createNoise2D } from './noise';
 import {
   buildHeightMap, buildTerrainGeometry, getTerrainHeight,
-  getLayerAtPosition, getBeddingPerturbation, getFaultOffset, LAKES, RIVERS,
 } from './TerrainGenerator';
 import { erodeHeightmap } from './ErosionSimulator';
 import { createTextureAtlases } from './TextureFactory';
@@ -18,7 +17,7 @@ import { createWater, animateWater, createLakeWater, createRiverWater, animateLa
 import { createAtmosphere, updateAtmosphere } from './AtmosphereSystem';
 import { createVegetation } from './VegetationSystem';
 import { createPostProcessing } from './PostProcessing';
-import { TERRAIN_SIZE, SEGMENTS, WATER_LEVEL } from '../config/geology';
+import { createArchaeologySystem, updateArchaeologySystem } from './ArchaeologySystem';
 
 export class SceneManager {
   constructor() {
@@ -31,6 +30,7 @@ export class SceneManager {
     this.water      = null;
     this.atmosphere = null;
     this.vegetation = null;
+    this.archaeology = null;
     this.heightMap  = null;
     this.noise      = null;
     this.noiseB     = null;
@@ -45,6 +45,7 @@ export class SceneManager {
     this._rimLight     = null;
     this._sunDir      = new THREE.Vector3(0.75, 0.4, 0.45).normalize();
     this._postFX      = null;
+    this._islandDef   = null;
 
     this.activeTool = 'navigate';
 
@@ -80,8 +81,9 @@ export class SceneManager {
   // ──────────────────────────────────────────────
   //  Initialisation
   // ──────────────────────────────────────────────
-  init(container, onProgress) {
-    // Renderer
+  init(container, onProgress, islandDef) {
+    this._islandDef = islandDef;
+    // Renderer — Three.js r162 auto-selects WebGL 2 when available.
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setSize(container.clientWidth, container.clientHeight);
     this.renderer.setPixelRatio(window.devicePixelRatio);  // full native resolution
@@ -94,26 +96,26 @@ export class SceneManager {
 
     // Scene + fog
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2(0xd0e0f0, 0.00018);
+    this.scene.fog = new THREE.FogExp2(0xd0e0f0, 0.00003);
 
-    // Camera
+    // Camera — near plane 5 cm so close-up rock/water details are never clipped
     this.camera = new THREE.PerspectiveCamera(
-      55, container.clientWidth / container.clientHeight, 0.1, 25000,
+      55, container.clientWidth / container.clientHeight, 0.05, 25000,
     );
-    this.camera.position.set(-400, 350, 700);
+    this.camera.position.set(...islandDef.camera.position);
 
     // Controls — smooth orbit camera
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping    = true;
     this.controls.dampingFactor    = 0.12;
-    this.controls.maxDistance      = 4000;
-    this.controls.minDistance      = 0.5;         // allow very close-up views
-    this.controls.maxPolarAngle    = Math.PI * 0.49;  // ~88°
-    this.controls.minPolarAngle    = 0.05;             // ~3°
+    this.controls.maxDistance      = 6000;            // wider overview
+    this.controls.minDistance      = 0.3;             // 30 cm — close enough to inspect 0.5 m features
+    this.controls.maxPolarAngle    = Math.PI * 0.52;  // ~94° — allows peeking below orbit target for underwater
+    this.controls.minPolarAngle    = 0.02;            // nearly overhead
     this.controls.enablePan        = true;
     this.controls.panSpeed         = 0.8;
     this.controls.screenSpacePanning = true;
-    this.controls.keyPanSpeed      = 0;          // we handle keyboard ourselves
+    this.controls.keyPanSpeed      = 0;               // we handle keyboard ourselves
     this.controls.rotateSpeed      = 0.5;
     this.controls.zoomSpeed        = 1.4;
     this.controls.mouseButtons     = {
@@ -125,7 +127,7 @@ export class SceneManager {
       ONE: THREE.TOUCH.ROTATE,
       TWO: THREE.TOUCH.DOLLY_PAN,
     };
-    this.controls.target.set(0, 80, 0);
+    this.controls.target.set(...islandDef.camera.target);
 
     // ── Scroll-wheel: dolly camera forward/backward along look direction ──
     this._onWheel = (e) => {
@@ -149,27 +151,29 @@ export class SceneManager {
     const { albedoAtlas, normalAtlas, rmhAtlas } = createTextureAtlases();
 
     onProgress?.(20, 'Creating atmosphere…');
-    this.atmosphere = createAtmosphere(this._sunDir);
+    this.atmosphere = createAtmosphere(this._sunDir, islandDef);
     this.scene.add(this.atmosphere.mesh);
+    if (this.atmosphere.effectsGroup) this.scene.add(this.atmosphere.effectsGroup);
 
     onProgress?.(25, 'Building heightmap…');
-    this.noise  = createNoise2D(42);
-    this.noiseB = createNoise2D(137);
-    this.heightMap = buildHeightMap(this.noise, this.noiseB);
+    this.noise  = createNoise2D(islandDef.terrain.noiseSeeds[0]);
+    this.noiseB = createNoise2D(islandDef.terrain.noiseSeeds[1]);
+    this.heightMap = buildHeightMap(this.noise, this.noiseB, islandDef);
 
     onProgress?.(35, 'Simulating erosion…');
-    erodeHeightmap(this.heightMap, SEGMENTS + 1, 38000);
+    erodeHeightmap(this.heightMap, islandDef.terrain.segments + 1, islandDef.terrain.erosionIterations);
 
     onProgress?.(50, 'Constructing terrain…');
-    const geo = buildTerrainGeometry(this.noise, this.heightMap);
+    const geo = buildTerrainGeometry(this.noise, this.heightMap, islandDef);
     this.terrainMat = createTerrainMaterial(albedoAtlas, normalAtlas, rmhAtlas, {
       sunDir:       this._sunDir,
       fogColorNear: new THREE.Color(0.82, 0.86, 0.92),
       fogColorFar:  new THREE.Color(0.72, 0.80, 0.90),
-      fogDensity:   0.00028,
-      lakes:        LAKES,
-      rivers:       RIVERS,
-      waterLevel:   WATER_LEVEL,
+      fogDensity:   0.00003,
+      lakes:        islandDef.lakes,
+      rivers:       islandDef.rivers,
+      islandSize:   islandDef.terrain.size,
+      waterLevel:   islandDef.terrain.waterLevel,
     });
     this.terrain = new THREE.Mesh(geo, this.terrainMat);
     this.terrain.castShadow    = true;
@@ -177,21 +181,27 @@ export class SceneManager {
     this.scene.add(this.terrain);
 
     onProgress?.(65, 'Creating water…');
-    this.water = createWater(this._sunDir);
+    this.water = createWater(this._sunDir, { terrainSize: islandDef.terrain.size, waterLevel: islandDef.terrain.waterLevel });
     this.scene.add(this.water.mesh);
 
     onProgress?.(70, 'Creating lake surfaces…');
-    const getH = (x, z) => getTerrainHeight(this.heightMap, x, z);
-    this.lakeWater = createLakeWater(LAKES, getH);
+    const getH = (x, z) => getTerrainHeight(this.heightMap, x, z, this._islandDef);
+    const { group: lakeWaterGroup, waterLevels: lakeWaterLevels } = createLakeWater(islandDef.lakes, getH);
+    this.lakeWater = lakeWaterGroup;
+    this._lakeWaterLevels = lakeWaterLevels;
     this.scene.add(this.lakeWater);
 
     onProgress?.(72, 'Creating river…');
-    this.riverWater = createRiverWater(RIVERS, getH);
+    this.riverWater = createRiverWater(islandDef.rivers, getH, islandDef.terrain.waterLevel);
     this.scene.add(this.riverWater);
 
     onProgress?.(75, 'Planting vegetation…');
-    this.vegetation = createVegetation(this.heightMap, this.noise);
+    this.vegetation = createVegetation(this.heightMap, this.noise, islandDef);
     this.scene.add(this.vegetation);
+
+    onProgress?.(78, 'Constructing archaeological ruins…');
+    this.archaeology = createArchaeologySystem(islandDef, getH);
+    this.scene.add(this.archaeology);
 
     onProgress?.(80, 'Setting up SSAO…');
     try {
@@ -596,15 +606,50 @@ export class SceneManager {
     }
 
     // ── Underwater detection: make water transparent when camera is below surface ──
-    const camBelowWater = this.camera.position.y < WATER_LEVEL;
-    if (this.water?.material?.uniforms?.uSubmerged) {
-      this.water.material.uniforms.uSubmerged.value = camBelowWater ? 1.0 : 0.0;
+    const camBelowOcean = this.camera.position.y < this._islandDef.terrain.waterLevel;
+
+    // Check if camera is inside any lake body
+    let camInsideLake = false;
+    let lakeDepth = 0;
+    if (this._lakeWaterLevels) {
+      for (const lake of this._islandDef.lakes) {
+        const dx = (this.camera.position.x - lake.cx) / lake.rx;
+        const dz = (this.camera.position.z - lake.cz) / lake.rz;
+        if (dx * dx + dz * dz < 1.15) {
+          const lakeWaterY = this._lakeWaterLevels.get(lake.name) ?? this._islandDef.terrain.waterLevel;
+          if (this.camera.position.y < lakeWaterY) {
+            camInsideLake = true;
+            lakeDepth = lakeWaterY - this.camera.position.y;
+            break;
+          }
+        }
+      }
     }
-    // Also reduce fog when submerged so layers are visible
-    if (camBelowWater) {
+
+    const camBelowWater = camBelowOcean || camInsideLake;
+
+    if (this.water?.material?.uniforms?.uSubmerged) {
+      this.water.material.uniforms.uSubmerged.value = camBelowOcean ? 1.0 : 0.0;
+    }
+
+    // Fog update — Beer-Lambert teal-blue underwater, normal above
+    if (camInsideLake) {
+      // Beer-Lambert water column: exponential absorption per metre depth
+      const rAbs = 1.0 - Math.exp(-0.34  * lakeDepth);
+      const gAbs = 1.0 - Math.exp(-0.062 * lakeDepth);
+      const bAbs = 1.0 - Math.exp(-0.021 * lakeDepth);
+      this.scene.fog.color.setRGB(
+        0.015 * (1 - rAbs) + 0.005 * rAbs,
+        0.10  * (1 - gAbs) + 0.035 * gAbs,
+        0.28  * (1 - bAbs) + 0.10  * bAbs,
+      );
+      this.scene.fog.density = Math.min(0.0025, 0.00060 + lakeDepth * 0.00015);
+    } else if (camBelowOcean) {
+      this.scene.fog.color.setRGB(0.01, 0.06, 0.20);
       this.scene.fog.density = 0.00012;
     } else {
-      const targetFog = this.terrainMat?.uniforms?.uFogDensity?.value ?? 0.00028;
+      this.scene.fog.color.setHex(0xd0e0f0);
+      const targetFog = this.terrainMat?.uniforms?.uFogDensity?.value ?? 0.00003;
       this.scene.fog.density = targetFog;
     }
 
@@ -613,10 +658,14 @@ export class SceneManager {
     animateLakeWater(this.riverWater, t);
     if (this.terrainMat?.uniforms?.uTime) this.terrainMat.uniforms.uTime.value = t;
     updateAtmosphere(this.atmosphere, t);
+    updateArchaeologySystem(this.archaeology, t);
     this._animateMarkers(t);
 
     if (this._postFX && this._ssaoEnabled !== false) {
-      this._postFX.compose(this.scene, this.camera);
+      this._postFX.compose(this.scene, this.camera, {
+        time: t,
+        lagoon: this._islandDef?.provinces?.lagoon,
+      });
     } else {
       this.renderer.render(this.scene, this.camera);
     }
@@ -632,10 +681,12 @@ export class SceneManager {
     const tgt = this.controls.target;
     const cam = this.camera;
 
-    // Constant base speed — NOT scaled by distance
-    let speed = 180 * dt * (this._cameraSpeedMultiplier || 1.0);
-    // Shift = boost
-    if (k['ShiftLeft'] || k['ShiftRight']) speed *= 3.0;
+    // Constant base speed — SCALED by distance to target for close-up precision
+    const orbitDist = this.camera.position.distanceTo(this.controls.target);
+    let speed = Math.max(0.18, Math.min(280, orbitDist * 1.6)) * dt
+              * (this._cameraSpeedMultiplier || 1.0);
+    // Shift = 4× boost
+    if (k['ShiftLeft'] || k['ShiftRight']) speed *= 4.0;
 
     // Camera-relative directions projected onto horizontal plane
     const fwd = new THREE.Vector3();
@@ -680,7 +731,7 @@ export class SceneManager {
       tgt.z += dz;
 
       // Clamp within terrain bounds
-      const half = TERRAIN_SIZE / 2;
+      const half = this._islandDef.terrain.size / 2;
       tgt.x = Math.max(-half, Math.min(half, tgt.x));
       tgt.z = Math.max(-half, Math.min(half, tgt.z));
     }
@@ -696,7 +747,7 @@ export class SceneManager {
   _clampCameraToTerrain() {
     if (!this.heightMap) return;
     const cam = this.camera.position;
-    const halfSize = TERRAIN_SIZE / 2;
+    const halfSize = this._islandDef.terrain.size / 2;
 
     // Check if camera is over the terrain
     const overLand = Math.abs(cam.x) < halfSize && Math.abs(cam.z) < halfSize;
@@ -705,8 +756,8 @@ export class SceneManager {
       // Only clamp Y — keep camera above terrain surface
       const cx = Math.max(-halfSize + 1, Math.min(halfSize - 1, cam.x));
       const cz = Math.max(-halfSize + 1, Math.min(halfSize - 1, cam.z));
-      const terrainH = getTerrainHeight(this.heightMap, cx, cz);
-      const minY = terrainH + 0.3;          // allow very close to ground
+      const terrainH = getTerrainHeight(this.heightMap, cx, cz, this._islandDef);
+      const minY = terrainH + 0.15;          // 15 cm clearance for sub-metre geology inspection
       if (cam.y < minY) {
         cam.y = minY;
       }
@@ -723,7 +774,7 @@ export class SceneManager {
     if (tgtInBounds) {
       const tx = Math.max(-halfSize + 1, Math.min(halfSize - 1, tgt.x));
       const tz = Math.max(-halfSize + 1, Math.min(halfSize - 1, tgt.z));
-      const tgtH = getTerrainHeight(this.heightMap, tx, tz);
+      const tgtH = getTerrainHeight(this.heightMap, tx, tz, this._islandDef);
       if (tgt.y < tgtH + 0.5) {
         tgt.y = tgtH + 0.5;
       }
@@ -734,7 +785,7 @@ export class SceneManager {
   //  Marker animations (pulsing, rotating, glowing)
   // ──────────────────────────────────────────────
   _animateMarkers(t) {
-    // Hover marker pulse
+    // Hover marker pulse + constant screen-size scaling
     if (this.hoverMarker?.visible && this.hoverMarker.userData.outer) {
       const d = this.hoverMarker.userData;
       const s = 1 + Math.sin(t * 4) * 0.12;
@@ -742,6 +793,16 @@ export class SceneManager {
       d.inner.scale.set(1 / s, 1, 1 / s);
       d.outerMat.opacity = 0.3 + Math.sin(t * 3) * 0.15;
       d.innerMat.opacity = 0.25 + Math.sin(t * 5) * 0.1;
+      // Scale parent group to maintain ~14 px screen radius at any zoom
+      if (this.renderer && this.camera) {
+        const dist = this.camera.position.distanceTo(this.hoverMarker.position);
+        const fovFactor = 2.0 * Math.tan(this.camera.fov * Math.PI / 360)
+                        / this.renderer.domElement.clientHeight;
+        const targetScreenPx = 14;
+        const worldR = Math.max(0.008, dist * fovFactor * targetScreenPx);
+        // RingGeometry outer radius = 7 world units → divide to get the needed scale
+        this.hoverMarker.scale.setScalar(worldR / 7);
+      }
     }
 
     // Animated tool markers
@@ -854,12 +915,13 @@ export class SceneManager {
   //  PUBLIC API — Camera data
   // ──────────────────────────────────────────────
   getCameraDirection() {
+    if (!this.camera) return new THREE.Vector3(0, 0, -1);
     const d = new THREE.Vector3();
     this.camera.getWorldDirection(d);
     return d;
   }
-  getCameraPosition() { return this.camera.position.clone(); }
-  getControlsTarget()  { return this.controls.target.clone(); }
+  getCameraPosition() { return this.camera ? this.camera.position.clone() : new THREE.Vector3(); }
+  getControlsTarget()  { return this.controls ? this.controls.target.clone() : new THREE.Vector3(); }
 
   /** Set camera distance from target (zoom). 0 = closest, 1 = farthest. */
   setZoomLevel(t) {
@@ -882,6 +944,7 @@ export class SceneManager {
     return Math.log(dist / min) / Math.log(max / min);
   }
   getScaleData() {
+    if (!this.camera || !this.renderer) return { worldPerPixel: 1 };
     const fov  = this.camera.fov * Math.PI / 180;
     const dist = this.camera.position.distanceTo(this.controls.target);
     return { worldPerPixel: 2 * Math.tan(fov / 2) * dist / this.renderer.domElement.clientHeight };
@@ -891,13 +954,13 @@ export class SceneManager {
   //  PUBLIC API — Geology helpers
   // ──────────────────────────────────────────────
   getLayerAt(wx, elev, wz) {
-    return getLayerAtPosition(this.noise, wx, elev, wz);
+    return this._islandDef.getLayerAt(this.noise, wx, elev, wz);
   }
   getTerrainHeightAt(wx, wz) {
-    return getTerrainHeight(this.heightMap, wx, wz);
+    return getTerrainHeight(this.heightMap, wx, wz, this._islandDef);
   }
   getBeddingAt(wx, wz) {
-    return getBeddingPerturbation(this.noise, wx, wz) + getFaultOffset(wx);
+    return this._islandDef.getStructuralOffset(this.noise, wx, wz);
   }
 
   // ──────────────────────────────────────────────
@@ -1411,6 +1474,9 @@ export class SceneManager {
     this.scene.fog.density = d;
     if (this.terrainMat) this.terrainMat.uniforms.uFogDensity.value = d;
     if (this.water?.material) this.water.material.uniforms.uFogDensity.value = d;
+    if (this.atmosphere?.material?.uniforms?.uFogDensity) {
+      this.atmosphere.material.uniforms.uFogDensity.value = d;
+    }
   }
   updateSunElevation(deg) {
     const r = deg * Math.PI / 180;

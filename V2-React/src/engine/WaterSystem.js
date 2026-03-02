@@ -5,7 +5,7 @@
 //  and flowing river animation.
 // ================================================================
 import * as THREE from 'three';
-import { TERRAIN_SIZE, WATER_LEVEL } from '../config/geology';
+
 
 const waterVert = /* glsl */ `
   uniform float uTime;
@@ -123,8 +123,33 @@ const waterFrag = /* glsl */ `
   }
 
   void main() {
-    vec3 N = normalize(vWorldNormal);
     vec3 V = normalize(cameraPosition - vWorldPos);
+
+    // ── UNDERWATER VIEW (back-face = camera beneath ocean plane) ──────────
+    if (!gl_FrontFacing) {
+      float cosUp = max(dot(V, vec3(0.0, 1.0, 0.0)), 0.0);
+      float snellWindow = smoothstep(0.60, 0.79, cosUp);
+      // Estimated scan depth from camera below the ocean surface mesh
+      float scanDepth = max(0.0, vWorldPos.y - cameraPosition.y + 8.0);
+      vec3 beerExt = vec3(exp(-0.34*scanDepth), exp(-0.062*scanDepth), exp(-0.021*scanDepth));
+      vec3 skyThrough = uSkyColor * 1.9 * beerExt * snellWindow;
+      // Caustic dappling on ocean underside
+      float ch1 = fract(sin(dot(vWorldPos.xz * 0.22 + uTime * vec2(0.40, 0.30), vec2(127.1,311.7)))*43758.55);
+      float ch2 = fract(sin(dot(vWorldPos.xz * 0.50 + uTime * vec2(0.27, 0.52), vec2(269.5,183.3)))*43758.55);
+      vec3 causticShafts = vec3(0.34, 0.64, 1.0) * pow((ch1+ch2)*0.5, 1.6) * 1.5 * snellWindow;
+      // TIR region
+      vec3 R = reflect(-V, vec3(0.0, -1.0, 0.0));
+      vec3 tirColor = mix(uDeepColor * 0.50, uShallowColor * 0.38, max(R.y, 0.0)) * (1.0 - snellWindow);
+      float viewLen = min(scanDepth / max(cosUp, 0.05), 80.0);
+      vec3 haze = uDeepColor * (1.0 - exp(-0.013 * viewLen));
+      vec3 finalColor = skyThrough + causticShafts + tirColor + haze * 0.28;
+      float fog = 1.0 - exp(-0.00048 * vFogDepth * vFogDepth);
+      finalColor = mix(finalColor, vec3(0.01, 0.04, 0.14), clamp(fog, 0.0, 0.62));
+      gl_FragColor = vec4(finalColor, 0.93);
+      return;
+    }
+
+    vec3 N = normalize(vWorldNormal);
     vec3 L = normalize(uSunDir);
 
     // â”€â”€ Micro-ripple normal perturbation for close-up detail â”€â”€
@@ -210,9 +235,9 @@ const waterFrag = /* glsl */ `
   }
 `;
 
-export function createWater(sunDir) {
-  // Massive ocean plane â€” extends well beyond camera far plane for horizon illusion
-  const geo = new THREE.PlaneGeometry(TERRAIN_SIZE * 10, TERRAIN_SIZE * 10, 400, 400);
+export function createWater(sunDir, { terrainSize, waterLevel }) {
+  // Massive ocean plane — extends well beyond camera far plane for horizon illusion
+  const geo = new THREE.PlaneGeometry(terrainSize * 10, terrainSize * 10, 400, 400);
   geo.rotateX(-Math.PI / 2);
 
   const mat = new THREE.ShaderMaterial({
@@ -224,7 +249,7 @@ export function createWater(sunDir) {
       uShallowColor:  { value: new THREE.Color(0.12, 0.42, 0.55) },
       uFogColor:      { value: new THREE.Color(0.784, 0.847, 0.91) },
       uHorizonColor:  { value: new THREE.Color(0.72, 0.80, 0.88) },
-      uFogDensity:    { value: 0.00028 },
+      uFogDensity:    { value: 0.00003 },
       uSubmerged:     { value: 0 },
     },
     vertexShader: waterVert,
@@ -235,7 +260,7 @@ export function createWater(sunDir) {
   });
 
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.y = WATER_LEVEL;
+  mesh.position.y = waterLevel;
   mesh.receiveShadow = true;
   mesh.renderOrder = 10;
 
@@ -247,9 +272,13 @@ export function animateWater(water, time) {
 }
 
 
-/* ── Lake water surfaces ───────────────────── */
-// Lakes use ocean-identical Gerstner waves, Fresnel, specular, SSS,
-// micro-ripples, caustics, sparkle — just scaled to the unit-circle geometry.
+/* ── Lake water surfaces ───────────────────────────────────────────
+   Realistic calm lake surface: fetch-limited capillary ripples
+   (amplitude 1–3 cm) rather than ocean-scale Gerstner waves.
+   Shore-damping flattens the surface at the bank edge.
+   Both above-water (Fresnel + PBR) and below-water (Snell window,
+   TIR, caustic shafts, Beer-Lambert) are handled in the frag shader.
+   ─────────────────────────────────────────────────────────────── */
 const lakeVertShader = /* glsl */ `
   uniform float uTime;
   varying vec3  vWorldPos;
@@ -257,42 +286,49 @@ const lakeVertShader = /* glsl */ `
   varying float vFogDepth;
   varying vec2  vUV;
 
-  vec3 gerstner(vec3 p, float t, vec2 dir, float freq, float amp, float steep) {
-    float phase = dot(dir, p.xz) * freq + t;
-    float s = sin(phase), c = cos(phase);
-    return vec3(steep * amp * dir.x * c, amp * s, steep * amp * dir.y * c);
-  }
-
-  vec3 allWaves(vec3 p, float t) {
-    return gerstner(p,t*0.8,normalize(vec2(1,0.3)),3.0,0.012,0.65)
-         + gerstner(p,t*0.6,normalize(vec2(-0.3,1)),4.5,0.009,0.55)
-         + gerstner(p,t*1.1,normalize(vec2(0.7,0.7)),7.5,0.006,0.45)
-         + gerstner(p,t*0.9,normalize(vec2(-0.5,-0.8)),10.0,0.003,0.38)
-         + gerstner(p,t*1.3,normalize(vec2(0.4,-0.6)),15.0,0.002,0.32)
-         + gerstner(p,t*1.5,normalize(vec2(-0.8,0.2)),21.0,0.0012,0.28)
-         + gerstner(p,t*1.7,normalize(vec2(0.9,-0.4)),30.0,0.0006,0.22)
-         + gerstner(p,t*2.0,normalize(vec2(-0.6,0.8)),40.0,0.0003,0.18);
-  }
-
   void main() {
     vec3 pos = position;
     vUV = pos.xz * 0.5 + 0.5;
     float t = uTime;
 
-    pos += allWaves(pos, t);
+    // Shore damping — waves die out right at the bank
+    float shoreDamp = smoothstep(0.0, 0.18, 1.0 - length(pos.xz));
+
+    // Capillary / wind ripples: multiple low-amplitude sine fans
+    float r1 = sin(pos.x * 0.70  + pos.z * 0.50  + t * 0.85 ) * 0.028;
+    float r2 = sin(pos.x * 1.40  - pos.z * 1.10  + t * 1.15 ) * 0.018;
+    float r3 = sin(pos.x * 2.50  + pos.z * 2.20  + t * 1.65 ) * 0.010;
+    float r4 = sin(pos.x * 4.20  - pos.z * 3.50  + t * 2.30 ) * 0.005;
+    float r5 = sin(pos.x * 7.80  + pos.z * 6.10  - t * 3.10 ) * 0.0025;
+    float r6 = sin(pos.x * 13.0  - pos.z * 10.5  + t * 4.20 ) * 0.0012;
+    pos.y += (r1 + r2 + r3 + r4 + r5 + r6) * shoreDamp;
 
     vec4 wp = modelMatrix * vec4(pos, 1.0);
     vWorldPos = wp.xyz;
 
-    // Finite-difference normals
-    float eps = 0.02;
-    vec3 px = position + vec3(eps,0,0);
-    vec3 pz = position + vec3(0,0,eps);
-    px += allWaves(px, t);
-    pz += allWaves(pz, t);
-    vec3 T = normalize(px - pos);
-    vec3 B = normalize(pz - pos);
-    vWorldNormal = normalize(mat3(modelMatrix) * normalize(cross(B, T)));
+    // Finite-difference normals from the ripple field
+    float e = 0.025;
+    float baseY = sin(pos.x*0.70+pos.z*0.50+t*0.85)*0.028
+                + sin(pos.x*1.40-pos.z*1.10+t*1.15)*0.018
+                + sin(pos.x*2.50+pos.z*2.20+t*1.65)*0.010
+                + sin(pos.x*4.20-pos.z*3.50+t*2.30)*0.005
+                + sin(pos.x*7.80+pos.z*6.10-t*3.10)*0.0025
+                + sin(pos.x*13.0-pos.z*10.5+t*4.20)*0.0012;
+    float yPx = sin((pos.x+e)*0.70+pos.z*0.50+t*0.85)*0.028
+              + sin((pos.x+e)*1.40-pos.z*1.10+t*1.15)*0.018
+              + sin((pos.x+e)*2.50+pos.z*2.20+t*1.65)*0.010
+              + sin((pos.x+e)*4.20-pos.z*3.50+t*2.30)*0.005
+              + sin((pos.x+e)*7.80+pos.z*6.10-t*3.10)*0.0025
+              + sin((pos.x+e)*13.0-pos.z*10.5+t*4.20)*0.0012;
+    float yPz = sin(pos.x*0.70+(pos.z+e)*0.50+t*0.85)*0.028
+              + sin(pos.x*1.40-(pos.z+e)*1.10+t*1.15)*0.018
+              + sin(pos.x*2.50+(pos.z+e)*2.20+t*1.65)*0.010
+              + sin(pos.x*4.20-(pos.z+e)*3.50+t*2.30)*0.005
+              + sin(pos.x*7.80+(pos.z+e)*6.10-t*3.10)*0.0025
+              + sin(pos.x*13.0-(pos.z+e)*10.5+t*4.20)*0.0012;
+    float dYdx = (yPx - baseY) / e;
+    float dYdz = (yPz - baseY) / e;
+    vWorldNormal = normalize(mat3(modelMatrix) * normalize(vec3(-dYdx, 1.0, -dYdz)));
 
     vec4 mv = modelViewMatrix * vec4(pos, 1.0);
     vFogDepth = length(mv.xyz);
@@ -309,6 +345,8 @@ const lakeFragShader = /* glsl */ `
   uniform float uFogDensity;
   uniform float uTime;
   uniform vec3  uHorizonColor;
+  uniform float uWaterSurfaceY;
+  uniform float uMaxDepth;
 
   varying vec3  vWorldPos;
   varying vec3  vWorldNormal;
@@ -331,84 +369,139 @@ const lakeFragShader = /* glsl */ `
     vec3 V = normalize(cameraPosition - vWorldPos);
     vec3 L = normalize(uSunDir);
 
-    // Micro-ripple normal perturbation
-    vec2 rUV = vWorldPos.xz * 0.12 + uTime * vec2(0.12, 0.08);
+    // ──────────────────────────────────────────────────────────────
+    //  UNDERWATER VIEW — camera below lake surface (back face)
+    // ──────────────────────────────────────────────────────────────
+    if (!gl_FrontFacing) {
+      // Snell's window: n_water=1.333 → critical angle 48.75° → cos=0.659
+      // dot(V, up) > 0.659 means we can see through to the sky above.
+      float cosUp = max(dot(V, vec3(0.0, 1.0, 0.0)), 0.0);
+      float snellWindow = smoothstep(0.60, 0.79, cosUp);
+
+      // Beer-Lambert extinction with camera depth below surface
+      float depth = max(0.0, uWaterSurfaceY - cameraPosition.y);
+      vec3 beerExt = vec3(
+        exp(-0.340 * depth),   // red   half-depth ~2.0 m
+        exp(-0.062 * depth),   // green half-depth ~11 m
+        exp(-0.021 * depth)    // blue  half-depth ~33 m
+      );
+
+      // Sky seen compressed through Snell window
+      vec3 skyThrough = mix(uSkyColor * 1.5, uSkyColor * 2.6, cosUp) * beerExt * snellWindow;
+
+      // Caustic dappling — moving interference pattern on the underside
+      float ch1 = vnoise(vWorldPos.xz * 0.18 + uTime * vec2(0.42, 0.30));
+      float ch2 = vnoise(vWorldPos.xz * 0.42 + uTime * vec2(0.28, 0.52) + vec2(3.1, 1.7));
+      float ch3 = vnoise(vWorldPos.xz * 0.86 + uTime * vec2(0.17, 0.24) + vec2(6.5, 4.3));
+      float causticPat = pow(ch1 * 0.55 + ch2 * 0.45 + ch3 * 0.25, 1.6);
+      vec3 causticShafts = vec3(0.36, 0.68, 1.0) * causticPat * 1.7 * snellWindow;
+
+      // Chromatic dispersion band at the Snell window perimeter
+      float dispEdge = smoothstep(0.60, 0.645, cosUp) * smoothstep(0.74, 0.69, cosUp);
+      vec3 dispersion = vec3(1.0, 0.40, 0.08) * dispEdge * 0.70;
+
+      // Total internal reflection outside the Snell window
+      // Perturb with near-surface ripple normals for realistic texture
+      vec2 rUV2 = vWorldPos.xz * 0.22 + uTime * vec2(0.14, 0.10);
+      float rH2  = fbm3(rUV2);
+      float rHx2 = fbm3(rUV2 + vec2(0.5, 0.0));
+      float rHz2 = fbm3(rUV2 + vec2(0.0, 0.5));
+      vec3 Ndown = normalize(vec3((rH2 - rHx2) * 0.5, -1.0, (rH2 - rHz2) * 0.5));
+      vec3 R = reflect(-V, Ndown);
+      float skyRRefl = max(R.y, 0.0);
+      vec3 tirColor = mix(uDeepColor * 0.52, uShallowColor * 0.42, skyRRefl) * (1.0 - snellWindow);
+
+      // Underwater volume scattering / haze along the view ray
+      float viewLen = min(depth / max(cosUp, 0.05), 80.0);
+      vec3 underwaterHaze = uDeepColor * (1.0 - exp(-0.016 * viewLen));
+
+      // Compose
+      vec3 finalColor = skyThrough + causticShafts + dispersion + tirColor + underwaterHaze * 0.32;
+
+      // Depth fog (camera further from surface = denser blue haze)
+      float fog = 1.0 - exp(-0.00045 * vFogDepth * vFogDepth);
+      vec3 ufog = vec3(0.014, 0.055, 0.18);
+      finalColor = mix(finalColor, ufog, clamp(fog, 0.0, 0.60));
+
+      gl_FragColor = vec4(finalColor, 0.55);
+      return;
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  ABOVE WATER VIEW — camera above lake surface (front face)
+    // ──────────────────────────────────────────────────────────────
+
+    // Micro-ripple normal perturbation for close-up detail
+    vec2 rUV = vWorldPos.xz * 0.14 + uTime * vec2(0.12, 0.08);
     float rH  = fbm3(rUV);
     float rHx = fbm3(rUV + vec2(0.5, 0.0));
     float rHz = fbm3(rUV + vec2(0.0, 0.5));
-    vec3 rippleN = normalize(vec3((rH - rHx) * 0.6, 1.0, (rH - rHz) * 0.6));
-    N = normalize(mix(N, rippleN, 0.35));
+    vec3 rippleN = normalize(vec3((rH - rHx) * 0.7, 1.0, (rH - rHz) * 0.7));
+    N = normalize(mix(N, rippleN, 0.42));
 
-    // Fresnel (Schlick)
+    // Fresnel (Schlick) — F0 = 0.02 for fresh water
     float cosTheta = max(dot(N, V), 0.0);
-    float fresnel = 0.04 + 0.96 * pow(1.0 - cosTheta, 4.0);
+    float fresnel = 0.02 + 0.98 * pow(1.0 - cosTheta, 4.5);
 
-    // Reflection colour
+    // Reflection colour: sky gradient + horizon blend
     vec3 R = reflect(-V, N);
     float skyBlend = max(R.y, 0.0);
-    vec3 skyRefl = mix(uSkyColor * 0.9, uSkyColor * 1.5, skyBlend);
+    vec3 skyRefl = mix(uSkyColor * 0.88, uSkyColor * 1.55, skyBlend);
     float horizonBlend = pow(1.0 - max(R.y, 0.0), 3.0);
-    vec3 reflColor = mix(skyRefl, uHorizonColor * 1.15, horizonBlend * 0.5);
+    vec3 reflColor = mix(skyRefl, uHorizonColor * 1.15, horizonBlend * 0.48);
 
-    // Quad sun specular
+    // Quad sun specular (tight core + wide glow)
     vec3 H = normalize(L + V);
     float NdH = max(dot(N, H), 0.0);
     float spec1 = pow(NdH, 2048.0) * 8.0;
-    float spec2 = pow(NdH, 512.0) * 2.5;
-    float spec3 = pow(NdH, 64.0) * 0.5;
-    float spec4 = pow(NdH, 12.0) * 0.12;
-    vec3 sunSpec = vec3(1.0, 0.97, 0.88) * (spec1 + spec2 + spec3 + spec4);
+    float spec2 = pow(NdH, 512.0)  * 2.5;
+    float spec3 = pow(NdH, 64.0)   * 0.5;
+    float spec4 = pow(NdH, 12.0)   * 0.12;
+    reflColor += vec3(1.0, 0.97, 0.88) * (spec1 + spec2 + spec3 + spec4);
+    reflColor += vec3(1.0, 0.95, 0.80) * pow(max(dot(R, L), 0.0), 8.0) * 0.55;
 
-    float sunReflect = pow(max(dot(R, L), 0.0), 8.0) * 0.55;
-    sunSpec += vec3(1.0, 0.95, 0.80) * sunReflect;
+    // Sparkle micro-facet glitter
+    float sparkle = pow(vnoise(vWorldPos.xz * 2.2 + uTime * vec2(0.7, 0.5)), 8.0)
+                  * pow(NdH, 6.0) * 7.0;
+    reflColor += vec3(1.0, 0.98, 0.90) * sparkle;
 
-    // Sparkle / sun glitter
-    float sparkleNoise = vnoise(vWorldPos.xz * 1.8 + uTime * vec2(0.7, 0.5));
-    float sparkle = pow(sparkleNoise, 8.0) * pow(NdH, 8.0) * 6.0;
-    sunSpec += vec3(1.0, 0.98, 0.90) * sparkle;
-    reflColor += sunSpec;
-
-    // Depth-based colour
-    float depthFactor = smoothstep(0.0, 1.0, cosTheta);
-    vec3 waterBody = mix(uDeepColor, uShallowColor, depthFactor * 0.5);
-
-    // Lake centre depth darkening
-    float edgeDist = length(vUV - 0.5) * 2.0;
-    waterBody = mix(waterBody, vec3(0.02, 0.10, 0.22), (1.0 - edgeDist) * 0.3);
+    // Beer-Lambert water-column depth coloring (looking through the water)
+    float centreD  = length(vUV - 0.5) * 2.0;        // 0 = centre, 1 = edge
+    float estDepth = uMaxDepth * max(0.0, 1.0 - centreD * centreD) * 0.55;
+    vec3 beerF = vec3(exp(-0.34 * estDepth), exp(-0.062 * estDepth), exp(-0.021 * estDepth));
+    vec3 lakeBottom = vec3(0.05, 0.095, 0.13);
+    vec3 waterBody  = mix(uShallowColor, lakeBottom, 1.0 - beerF);
+    waterBody = mix(waterBody, uDeepColor, (1.0 - cosTheta) * 0.45);
 
     // Subsurface scattering
-    float sssForward = pow(max(dot(V, -L), 0.0), 3.0) * 0.35;
-    float sssBack = pow(max(dot(N, L), 0.0), 2.0) * 0.12;
-    waterBody += vec3(0.02, 0.22, 0.18) * sssForward;
-    waterBody += vec3(0.0, 0.10, 0.08) * sssBack;
+    waterBody += vec3(0.02, 0.22, 0.18) * pow(max(dot(V, -L), 0.0), 3.0) * 0.38;
+    waterBody += vec3(0.0,  0.10, 0.08) * pow(max(dot(N,  L), 0.0), 2.0) * 0.14;
 
     // 3-octave caustics
-    float c1 = vnoise(vWorldPos.xz * 0.03 + uTime * 0.35) * 0.10;
-    float c2 = vnoise(vWorldPos.xz * 0.08 + uTime * 0.50 + vec2(5.3, 2.1)) * 0.07;
-    float c3 = vnoise(vWorldPos.xz * 0.18 + uTime * 0.70 + vec2(2.1, 7.4)) * 0.04;
+    float c1 = vnoise(vWorldPos.xz * 0.030 + uTime * 0.35) * 0.10;
+    float c2 = vnoise(vWorldPos.xz * 0.075 + uTime * 0.50 + vec2(5.3, 2.1)) * 0.07;
+    float c3 = vnoise(vWorldPos.xz * 0.160 + uTime * 0.70 + vec2(2.1, 7.4)) * 0.04;
     float caustic = c1 + c2 + c3;
     waterBody += vec3(caustic * 0.5, caustic * 0.85, caustic * 1.1);
+    waterBody += waterBody * max(dot(N, L), 0.0) * 0.22;
 
-    // Sun-lit diffuse
-    float diff = max(dot(N, L), 0.0) * 0.22;
-    waterBody += waterBody * diff;
-
-    // Final blend
+    // Final Fresnel blend + fog
     vec3 color = mix(waterBody, reflColor, fresnel);
-
-    // Fog
-    float fogDist = vFogDepth;
-    float fog = 1.0 - exp(-uFogDensity * uFogDensity * fogDist * fogDist);
-    vec3 fogCol = mix(uFogColor, uHorizonColor, smoothstep(3000.0, 10000.0, fogDist) * 0.5);
+    float fog = 1.0 - exp(-uFogDensity * uFogDensity * vFogDepth * vFogDepth);
+    vec3 fogCol = mix(uFogColor, uHorizonColor, smoothstep(3000.0, 10000.0, vFogDepth) * 0.5);
     color = mix(color, fogCol, clamp(fog, 0.0, 1.0));
 
-    gl_FragColor = vec4(color, 0.88);
+    gl_FragColor = vec4(color, 0.90);
   }
 `;
 
 export function createLakeWater(lakes, getTerrainHeightFn) {
   const group = new THREE.Group();
+  const waterLevels = new Map(); // exposed so SceneManager can detect lake submersion
+
   for (const lake of lakes) {
+    // Sample the terrain at 32 points around the inner rim to find the lowest
+    // crossing — that is the natural spill point of the lake basin.
     let minRim = Infinity;
     for (let a = 0; a < Math.PI * 2; a += Math.PI / 16) {
       const sx = lake.cx + Math.cos(a) * lake.rx * 0.92;
@@ -416,27 +509,34 @@ export function createLakeWater(lakes, getTerrainHeightFn) {
       const rh = getTerrainHeightFn(sx, sz);
       if (rh < minRim) minRim = rh;
     }
-    const waterY = minRim + 1.8;
+    // Place the water surface 1.8 m below the spill point so it looks
+    // contained inside the basin rather than right at the brim.
+    const waterY = minRim - 1.8;
+    waterLevels.set(lake.name, waterY);
 
     const geo = new THREE.CircleGeometry(1, 128);
     geo.rotateX(-Math.PI / 2);
 
     const mat = new THREE.ShaderMaterial({
       uniforms: {
-        uTime:         { value: 0 },
-        uSunDir:       { value: new THREE.Vector3(0.75, 0.4, 0.45).normalize() },
-        uSkyColor:     { value: new THREE.Color(0.55, 0.72, 0.88) },
-        uDeepColor:    { value: new THREE.Color(0.04, 0.18, 0.32) },
-        uShallowColor: { value: new THREE.Color(0.12, 0.42, 0.55) },
-        uFogColor:     { value: new THREE.Color(0.784, 0.847, 0.91) },
-        uHorizonColor: { value: new THREE.Color(0.72, 0.80, 0.88) },
-        uFogDensity:   { value: 0.00018 },
+        uTime:          { value: 0 },
+        uSunDir:        { value: new THREE.Vector3(0.75, 0.4, 0.45).normalize() },
+        uSkyColor:      { value: new THREE.Color(0.55, 0.72, 0.88) },
+        uDeepColor:     { value: new THREE.Color(0.04, 0.18, 0.32) },
+        uShallowColor:  { value: new THREE.Color(0.12, 0.42, 0.55) },
+        uFogColor:      { value: new THREE.Color(0.784, 0.847, 0.91) },
+        uHorizonColor:  { value: new THREE.Color(0.72, 0.80, 0.88) },
+        uFogDensity:    { value: 0.00018 },
+          uFogDensity:    { value: 0.00003 },
+        uMaxDepth:      { value: lake.depth },
       },
       vertexShader: lakeVertShader,
       fragmentShader: lakeFragShader,
       transparent: true,
       side: THREE.DoubleSide,
-      depthWrite: false,
+      // depthWrite:true ensures this surface occludes the ocean mesh (y=38) that
+      // would otherwise show through the transparent lake, causing a double-layer.
+      depthWrite: true,
     });
 
     const mesh = new THREE.Mesh(geo, mat);
@@ -444,10 +544,10 @@ export function createLakeWater(lakes, getTerrainHeightFn) {
     mesh.scale.set(lake.rx * 0.95, 1, lake.rz * 0.95);
     mesh.receiveShadow = true;
     mesh.renderOrder = 11;
-    mesh.userData = { isLakeWater: true };
+    mesh.userData = { isLakeWater: true, lakeData: lake, waterY };
     group.add(mesh);
   }
-  return group;
+  return { group, waterLevels };
 }
 
 /* ── Catmull-Rom interpolation for smooth river paths ── */
@@ -599,7 +699,11 @@ const riverFragShader = /* glsl */ `
     // Depth-based body colour — edge-to-centre depth for river cross-section
     float edgeFade = smoothstep(0.0, 0.3, min(vRiverUV.x, 1.0 - vRiverUV.x));
     float depthFactor = smoothstep(0.0, 1.0, cosTheta);
+    // Sediment turbidity: channel centre carries suspended sediment (brownish tint)
+    float sedimentLoad = edgeFade * 0.45;
+    vec3 sedimentColor = vec3(0.52, 0.40, 0.26);
     vec3 waterBody = mix(uShallowColor, uDeepColor, edgeFade * 0.6 + depthFactor * 0.2);
+    waterBody = mix(waterBody, sedimentColor, sedimentLoad * 0.18);
 
     // Subsurface scattering
     float sssForward = pow(max(dot(V, -L), 0.0), 3.0) * 0.35;
@@ -615,11 +719,22 @@ const riverFragShader = /* glsl */ `
     float caustic = c1 + c2 + c3;
     waterBody += vec3(caustic * 0.5, caustic * 0.85, caustic * 1.1);
 
-    // Flowing foam near banks
+    // Bank foam — turbulent water at the channel margins
     float edgeProx = 1.0 - edgeFade;
     float foamPattern = vnoise(vec2(vRiverUV.x * 10.0, vRiverUV.y * 20.0 - uTime * 1.2)) * edgeProx;
-    float foam = smoothstep(0.25, 0.55, foamPattern) * 0.35;
-    waterBody = mix(waterBody, vec3(0.70, 0.80, 0.85), foam);
+    float bankFoam = smoothstep(0.25, 0.55, foamPattern) * 0.40;
+    waterBody = mix(waterBody, vec3(0.72, 0.82, 0.88), bankFoam);
+
+    // Mid-channel whitecaps / hydraulic turbulence in faster flow zones
+    // Modelled as patches of frothy water along the thalweg
+    float rapidNoise = vnoise(vec2(vRiverUV.y * 18.0 - uTime * 2.8, vRiverUV.x * 5.0));
+    float rapidNoise2 = vnoise(vec2(vRiverUV.y * 28.0 - uTime * 4.0, vRiverUV.x * 9.0 + 1.5));
+    float channelFoam = smoothstep(0.58, 0.82, rapidNoise * 0.6 + rapidNoise2 * 0.4) * edgeFade * 0.28;
+    waterBody = mix(waterBody, vec3(0.88, 0.92, 0.95), channelFoam);
+
+    // Boil / upwelling patches — slow gyres behind obstacles
+    float boil = pow(vnoise(vec2(vRiverUV.y * 6.0 - uTime * 0.9, vRiverUV.x * 4.0 + 3.0)), 3.0) * edgeFade * 0.12;
+    waterBody = mix(waterBody, vec3(0.65, 0.78, 0.84), boil);
 
     // Sun-lit diffuse
     float diff = max(dot(N, L), 0.0) * 0.22;
@@ -638,7 +753,7 @@ const riverFragShader = /* glsl */ `
   }
 `;
 
-export function createRiverWater(rivers, getTerrainHeightFn) {
+export function createRiverWater(rivers, getTerrainHeightFn, waterLevel = 38) {
   const group = new THREE.Group();
   for (const river of rivers) {
     const pts = subdivideRiverPath(river.points, 8);
@@ -666,8 +781,13 @@ export function createRiverWater(rivers, getTerrainHeightFn) {
       const hw = river.width * (0.8 + 0.2 * Math.sin(accLen * 0.005));
       const cx = pts[i].x, cz = pts[i].z;
 
-      const hC = getTerrainHeightFn(cx, cz);
-      const h = hC + 6.0;
+      // Sample the carved bank edges (at the water surface boundary) to determine
+      // the natural fill level — this fills the channel to just below the rim
+      // rather than placing water at a fixed offset above the carved centre.
+      const hLeft  = getTerrainHeightFn(cx + nx * hw, cz + nz * hw);
+      const hRight = getTerrainHeightFn(cx - nx * hw, cz - nz * hw);
+      // Water surface = 0.3 m below the lower bank; never below ocean level.
+      const h = Math.max(Math.min(hLeft, hRight) - 0.3, waterLevel + 0.2);
 
       ribVerts.push(cx + nx * hw, h, cz + nz * hw);
       ribVerts.push(cx - nx * hw, h, cz - nz * hw);
@@ -702,7 +822,8 @@ export function createRiverWater(rivers, getTerrainHeightFn) {
       fragmentShader: riverFragShader,
       transparent: true,
       side: THREE.DoubleSide,
-      depthWrite: false,
+      // depthWrite:true occludes the ocean plane beneath the river surface.
+      depthWrite: true,
     });
 
     const mesh = new THREE.Mesh(geo, mat);

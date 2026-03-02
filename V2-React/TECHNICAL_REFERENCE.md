@@ -24,6 +24,7 @@
 16. [React Component Patterns](#react-component-patterns)
 17. [Performance Techniques](#performance-techniques)
 18. [Constants & Configuration Values](#constants--configuration-values)
+19. [Creating a New Island / Terrain](#creating-a-new-island--terrain)
 
 ---
 
@@ -1758,6 +1759,311 @@ Lake water surfaces sit at `minRimElevation + 1.8 m`, where `minRimElevation` is
 |---|---|---|
 | 42 | `noise` | Primary terrain, vegetation clustering |
 | 137 | `noiseB` | Secondary terrain details, mountain belts |
+
+---
+
+## Creating a New Island / Terrain
+
+The engine is fully data-driven. Every island-specific value lives in a single definition object; the engine systems (TerrainGenerator, WaterSystem, VegetationSystem, SceneManager) contain no hardcoded island data and consume whichever definition they are given.
+
+**Files involved:**
+- `src/islands/<yourIsland>.js` — the definition file you create
+- `src/islands/index.js` — the registry you add one line to
+
+### 1. The Island Definition Object
+
+A valid island definition must export a single object with the following top-level keys.
+
+```javascript
+export const myIsland = {
+  id:      'my-island',   // must match the key in ISLAND_DEFS
+  name:    'My Island',   // display name in the menu
+
+  // ── Terrain footprint ────────────────────────────────────────
+  terrain: {
+    size:       2000,   // world-space width and depth in metres
+    segments:   512,    // heightmap grid resolution (power of 2 recommended)
+    waterLevel:  38,    // ocean base elevation in metres
+    noiseSeeds: { primary: 42, secondary: 137 },
+    erosionIterations: 200_000,   // hydraulic erosion passes (0 = skip)
+  },
+
+  // ── Camera ───────────────────────────────────────────────────
+  camera: {
+    initialPosition: { x: 0, y: 400, z: 600 },
+    initialTarget:   { x: 0, y:   0, z:   0 },
+    minDistance: 50,
+    maxDistance: 2000,
+  },
+
+  // ── Geological layers ────────────────────────────────────────
+  //   Consumed by TerrainGenerator for texture blending
+  //   and by tool handlers for sample identification.
+  layers: [...],          // see §Geological Layer System
+
+  // ── Structural geology ───────────────────────────────────────
+  structuralGeology: {
+    strikeAzimuth: 45,    // regional strike (°)
+    dipAngle:      25,    // regional dip (°)
+    faultCount:     3,
+  },
+
+  // ── Water features ──────────────────────────────────────────
+  lakes:  [...],          // see §Lake Definition below
+  rivers: [...],          // see §River Definition below
+
+  // ── Farm / flat-plateau feature ─────────────────────────────
+  farm: { cx: 0, cz: 0, radius: 160, elevation: 95 },
+
+  // ── Height function ──────────────────────────────────────────
+  //   Returns terrain elevation in metres at world-space (wx, wz).
+  //   Called millions of times; avoid allocations here.
+  generateHeight(wx, wz, opts = {}) { ... },
+
+  // ── Layer lookup ─────────────────────────────────────────────
+  //   Returns the geological layer object for a given elevation.
+  getLayerAt(elevation) { ... },
+
+  // ── Dense river-path cache ───────────────────────────────────
+  //   Optional — engine falls back to subdivideRiverPath if absent.
+  getDenseRiverPath(river) { ... },
+};
+```
+
+---
+
+### 2. Terrain Constants
+
+| Property | Type | Notes |
+|---|---|---|
+| `size` | number | World-space side length in metres. 2000 m covers a ~2 km² island. |
+| `segments` | number | Heightmap grid cells per side. 512 gives 512×512 = 262,144 vertices. |
+| `waterLevel` | number | Y-coordinate of the ocean plane. Typically 38 m. Everything below this is submarine. |
+| `noiseSeeds.primary` | number | Master seed for the main terrain noise generator. |
+| `noiseSeeds.secondary` | number | Seed for secondary detail / mountain-belt noise. |
+| `erosionIterations` | number | Hydraulic erosion passes. Use 200,000 for a well-eroded island; set to 0 to skip (faster startup). |
+
+---
+
+### 3. Lake Definition
+
+Each entry in the `lakes` array defines an elliptical basin that is carved from the terrain and then filled with a water mesh at runtime.
+
+```javascript
+lakes: [
+  {
+    cx:    -320,        // world-space X centre (metres)
+    cz:     180,        // world-space Z centre (metres)
+    rx:     160,        // ellipse radius along X (metres)
+    rz:     110,        // ellipse radius along Z (metres)
+    depth:   55,        // carve depth below surrounding terrain (metres)
+    name: 'Mirror Lake',
+  },
+  // ... more lakes
+],
+```
+
+**Depth pitfalls**  
+The carve is applied *on top of* whatever the terrain height function returns. If the terrain is already low (e.g. 60 m) and `depth` is 80, the basin bottom lands at -20 m — below sea level. The lake water surface is placed at the lowest sampled rim point, so it would be at or below 38 m and may merge visually with the ocean.
+
+Rule of thumb: `terrainHeightAtLakeCenter - depth > waterLevel`. For a lake at ~120 m elevation, a depth of 60–80 m is safe.
+
+---
+
+### 4. River Definition
+
+Each entry in the `rivers` array defines a spline-based channel carved from the terrain and filled with a ribbon water mesh.
+
+```javascript
+rivers: [
+  {
+    name:  'My River',
+    width:  30,           // channel width in metres
+    depth:  16,           // carve depth below terrain (metres)
+    points: [
+      { x: -620, z: -490 },   // source — must be on land (inland)
+      { x:  ...           },   // intermediate control points
+      { x:  810, z: -135 },   // mouth — may terminate near coast
+    ],
+  },
+],
+```
+
+**Path rules**
+- Every control point must lie inside the island's coastline. A point in the ocean generates a submarine trench.
+- Use the coastline test: `rawDist = sqrt(wx²+wz²) / (terrainSize/2)`. If `rawDist > 0.78` (typical coast threshold), the point is in the ocean.
+- Points are upsampled with an 8× Catmull-Rom subdivide; 8–12 control points is sufficient for a winding river.
+- The water surface is placed 0.3 m below the lower bank edge, clamped above `waterLevel + 0.2 m`. No special height tweaking is needed.
+
+---
+
+### 5. Height Function
+
+The `generateHeight(wx, wz, opts)` function is the core of the terrain and is called at every heightmap vertex during init. It must be pure (no external state) and allocation-free.
+
+```javascript
+import { fbm, ridgeNoise } from '../engine/noise';
+import { createNoise2D } from '../engine/noise';
+
+const noise  = createNoise2D(42);    // primary
+const noiseB = createNoise2D(137);   // secondary
+
+/**
+ * @param {number} wx  world-space X (-size/2 … +size/2)
+ * @param {number} wz  world-space Z (-size/2 … +size/2)
+ * @returns {number}   elevation in metres
+ */
+generateHeight(wx, wz) {
+  const S = TERRAIN_SIZE;
+
+  // 1. Island mask — smoothly attenuates height toward coast
+  const nx = wx / (S / 2);
+  const nz = wz / (S / 2);
+  const rawDist = Math.sqrt(nx * nx + nz * nz);
+  const islandMask = Math.max(0, 1 - Math.pow(rawDist / 0.78, 3.5));
+
+  // 2. Base elevation (fBm)
+  const baseH = fbm(noise, wx * 0.001, wz * 0.001, 6, 0.5, 2.0) * 0.5 + 0.5;
+
+  // 3. Mountain ridges
+  const ridgeH = ridgeNoise(noiseB, wx * 0.0008, wz * 0.0008, 4) * 0.6;
+
+  // 4. Combine and scale
+  const h = (baseH * 0.6 + ridgeH * 0.4) * islandMask;
+  return h * 420;   // peak height in metres (adjust to taste)
+}
+```
+
+Key helper functions in `src/engine/noise.js`:
+
+| Function | Signature | Notes |
+|---|---|---|
+| `fbm` | `(noise, x, z, octaves, persistence, lacunarity)` | Fractional Brownian motion; returns [−1, 1] |
+| `ridgeNoise` | `(noise, x, z, octaves)` | Inverted fBm for sharp mountain ridgelines |
+| `createNoise2D` | `(seed)` → `noise fn` | Creates a seeded simplex noise function |
+
+---
+
+### 6. Geological Layer Function
+
+```javascript
+import { getLayerAtElevation } from '../config/geology';
+
+getLayerAt(elevation) {
+  // You can use the shared utility directly:
+  return getLayerAtElevation(elevation);
+
+  // Or define a custom layer sequence for your island:
+  if (elevation > 300) return { name: 'Granite', rockType: 'igneous', ... };
+  if (elevation > 150) return { name: 'Sandstone', rockType: 'sedimentary', ... };
+  return { name: 'Shale', rockType: 'sedimentary', ... };
+}
+```
+
+Available layer objects are defined in `src/config/geology.js` as `LAYERS`.
+
+---
+
+### 7. Registering the Island
+
+Add a single line to `src/islands/index.js`:
+
+```javascript
+// src/islands/index.js
+import { hadleyIsland } from './hadley';
+import { myIsland      } from './myIsland';   // ← add import
+
+export const ISLAND_DEFS = {
+  survey:    hadleyIsland,
+  'my-island': myIsland,                       // ← add entry (key = island.id)
+};
+```
+
+The engine's `getIslandDef(id)` automatically resolves it. The menu will also pick it up if you add an entry to the menu island list in `MenuScreen.jsx`.
+
+---
+
+### 8. Minimal Skeleton
+
+Copy this into `src/islands/myIsland.js` as a starting point:
+
+```javascript
+import { fbm, ridgeNoise, createNoise2D } from '../engine/noise';
+import { getLayerAtElevation } from '../config/geology';
+import { subdivideRiverPath } from '../engine/TerrainGenerator';
+
+const noise  = createNoise2D(99);
+const noiseB = createNoise2D(200);
+
+const TERRAIN_SIZE = 2000;
+const WATER_LEVEL  = 38;
+
+const _denseCache = new Map();
+
+export const myIsland = {
+  id:   'my-island',
+  name: 'My Island',
+
+  terrain: {
+    size: TERRAIN_SIZE,
+    segments: 512,
+    waterLevel: WATER_LEVEL,
+    noiseSeeds: { primary: 99, secondary: 200 },
+    erosionIterations: 200_000,
+  },
+
+  camera: {
+    initialPosition: { x: 0, y: 400, z: 600 },
+    initialTarget:   { x: 0, y:   0, z:   0 },
+    minDistance: 50,
+    maxDistance: 2000,
+  },
+
+  structuralGeology: { strikeAzimuth: 60, dipAngle: 20, faultCount: 2 },
+
+  lakes: [
+    { cx: 0, cz: 100, rx: 120, rz: 90, depth: 50, name: 'Summit Lake' },
+  ],
+
+  rivers: [
+    {
+      name: 'Main River',
+      width: 28,
+      depth: 14,
+      points: [
+        { x: -500, z: -400 },
+        { x: -300, z: -200 },
+        { x:    0, z:    0 },
+        { x:  300, z:  100 },
+        { x:  600, z:   50 },
+      ],
+    },
+  ],
+
+  farm: { cx: 300, cz: 250, radius: 140, elevation: 90 },
+
+  generateHeight(wx, wz) {
+    const nx = wx / (TERRAIN_SIZE / 2);
+    const nz = wz / (TERRAIN_SIZE / 2);
+    const rawDist = Math.sqrt(nx * nx + nz * nz);
+    const mask = Math.max(0, 1 - Math.pow(rawDist / 0.78, 3.5));
+    const base  = fbm(noise,  wx * 0.001,  wz * 0.001,  6, 0.50, 2.0) * 0.5 + 0.5;
+    const ridge = ridgeNoise(noiseB, wx * 0.0008, wz * 0.0008, 4) * 0.6;
+    return (base * 0.65 + ridge * 0.35) * mask * 420;
+  },
+
+  getLayerAt(elevation) {
+    return getLayerAtElevation(elevation);
+  },
+
+  getDenseRiverPath(river) {
+    if (_denseCache.has(river.name)) return _denseCache.get(river.name);
+    const dense = subdivideRiverPath(river.points, 8);
+    _denseCache.set(river.name, dense);
+    return dense;
+  },
+};
+```
 
 ---
 

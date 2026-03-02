@@ -4,6 +4,7 @@
 // ================================================================
 import { useEffect, useRef } from 'react';
 import { SceneManager } from '../engine/SceneManager';
+import { getIslandDef } from '../islands';
 import {
   handleIdentify, handleDrill, handleMeasure, clearMeasure,
   handleStrikeDip, handleCrossSection, clearCrossSection, clearStrikeDip,
@@ -12,179 +13,197 @@ import useStore from '../store/useStore';
 
 export default function useSceneEngine(containerRef) {
   const engineRef = useRef(null);
+  const menuOpen       = useStore((s) => s.menuOpen);
+  const selectedIsland = useStore((s) => s.selectedIsland);
 
   useEffect(() => {
-    if (!containerRef.current || engineRef.current) return;
+    // Wait until the user has dismissed the island menu before initialising
+    if (!containerRef.current || engineRef.current || menuOpen) return;
 
     const engine = new SceneManager();
     engineRef.current = engine;
 
-    // ── Initialise engine (synchronous — progress callbacks update store) ──
-    engine.init(containerRef.current, (progress, message) => {
-      useStore.getState().setLoading(progress, message);
-    });
+    // Defer engine.init() by one animation frame so React can commit the
+    // "menuOpen: false, isLoaded: false" state and paint the loading screen
+    // before the synchronous heavy-init blocks the main thread.
+    let disposed = false;
 
-    // ── Throttled hover → store ──
-    let lastHover = 0;
-    engine.onHover((point) => {
-      const now = performance.now();
-      if (now - lastHover < 33) return; // ~30 fps
-      lastHover = now;
+    // Subscription handles — declared here so the cleanup return can always
+    // call them even if the RAF fires after the component unmounts.
+    let unsubTool, unsubSettings, unsubDrill, unsubMeasure, unsubStrikeDip;
 
-      const layer = engine.getLayerAt(point.x, point.y, point.z);
-      useStore.getState().setHoverInfo({
-        x: point.x,
-        z: point.z,
-        elevation: point.y,
-        rockName: layer.name,
+    const rafId = requestAnimationFrame(() => {
+      if (disposed) return;
+
+      // ── Initialise engine (synchronous — progress callbacks update store) ──
+      engine.init(containerRef.current, (progress, message) => {
+        useStore.getState().setLoading(progress, message);
+      }, getIslandDef(selectedIsland?.id ?? selectedIsland ?? 'survey'));
+
+      // ── Throttled hover → store ──
+      let lastHover = 0;
+      engine.onHover((point) => {
+        const now = performance.now();
+        if (now - lastHover < 33) return; // ~30 fps
+        lastHover = now;
+
+        const layer = engine.getLayerAt(point.x, point.y, point.z);
+        useStore.getState().setHoverInfo({
+          x: point.x,
+          z: point.z,
+          elevation: point.y,
+          rockName: layer.name,
+        });
       });
-    });
 
-    // ── Click → tool handler → store ──
-    engine.onClick((point) => {
-      const s    = useStore.getState();
-      const tool = s.activeTool;
+      // ── Click → tool handler → store ──
+      engine.onClick((point) => {
+        const s    = useStore.getState();
+        const tool = s.activeTool;
 
-      switch (tool) {
-        case 'identify': {
-          const layer = handleIdentify(engine, point);
-          s.showRockPopup(layer);
-          break;
-        }
-        case 'drill': {
-          const s2 = useStore.getState();
-          const opts = s2.drillSettings || {};
-          const result = handleDrill(engine, point, opts);
-          s.setDrillResult(result);
-          s.addDrillMarker(result);      // persist
-          s.openPanel('drill');
-          break;
-        }
-        case 'measure': {
-          const result = handleMeasure(engine, point);
-          if (result) {
-            s.setMeasureResult(result);
-            s.addMeasureMarker(result);  // persist
-            s.openPanel('measure');
+        switch (tool) {
+          case 'identify': {
+            const layer = handleIdentify(engine, point);
+            s.showRockPopup(layer);
+            break;
           }
-          break;
-        }
-        case 'strikedip': {
-          const result = handleStrikeDip(engine, point);
-          s.addStrikeDip(result);
-          s.openPanel('strikedip');
-          break;
-        }
-        case 'crosssection': {
-          const result = handleCrossSection(engine, point);
-          if (result) {
-            s.setCrossSection(result);
-            s.openPanel('crosssection');
+          case 'drill': {
+            const s2 = useStore.getState();
+            const opts = s2.drillSettings || {};
+            const result = handleDrill(engine, point, opts);
+            s.setDrillResult(result);
+            s.addDrillMarker(result);      // persist
+            s.openPanel('drill');
+            break;
           }
-          break;
+          case 'measure': {
+            const result = handleMeasure(engine, point);
+            if (result) {
+              s.setMeasureResult(result);
+              s.addMeasureMarker(result);  // persist
+              s.openPanel('measure');
+            }
+            break;
+          }
+          case 'strikedip': {
+            const result = handleStrikeDip(engine, point);
+            s.addStrikeDip(result);
+            s.openPanel('strikedip');
+            break;
+          }
+          case 'crosssection': {
+            const result = handleCrossSection(engine, point);
+            if (result) {
+              s.setCrossSection(result);
+              s.openPanel('crosssection');
+            }
+            break;
+          }
+          default:
+            break;
         }
-        default:
-          break;
-      }
-    });
+      });
 
-    // ── Marker click (navigate mode) → recall saved data ──
-    engine.onMarkerClick(({ type, markerId }) => {
-      const s = useStore.getState();
-      let data = null;
-      let panel = null;
+      // ── Marker click (navigate mode) → recall saved data ──
+      engine.onMarkerClick(({ type, markerId }) => {
+        const s = useStore.getState();
+        let data = null;
+        let panel = null;
 
-      if (type === 'drill') {
-        data = s.drillMarkers.find((m) => m.id === markerId);
+        if (type === 'drill') {
+          data = s.drillMarkers.find((m) => m.id === markerId);
+          if (data) {
+            s.setDrillResult(data);
+            panel = 'drill';
+          }
+        } else if (type === 'measure') {
+          data = s.measureMarkers.find((m) => m.id === markerId);
+          if (data) {
+            s.setMeasureResult(data);
+            panel = 'measure';
+          }
+        } else if (type === 'strikeDip') {
+          data = s.strikeDipResults.find((m) => m.id === markerId);
+          if (data) panel = 'strikedip';
+        }
+
         if (data) {
-          s.setDrillResult(data);
-          panel = 'drill';
+          s.selectMarker({ type, markerId, data });
+          if (panel) s.openPanel(panel);
         }
-      } else if (type === 'measure') {
-        data = s.measureMarkers.find((m) => m.id === markerId);
-        if (data) {
-          s.setMeasureResult(data);
-          panel = 'measure';
-        }
-      } else if (type === 'strikeDip') {
-        data = s.strikeDipResults.find((m) => m.id === markerId);
-        if (data) panel = 'strikedip';
-      }
+      });
 
-      if (data) {
-        s.selectMarker({ type, markerId, data });
-        if (panel) s.openPanel(panel);
-      }
-    });
+      // ── Forward tool changes to engine ──
+      unsubTool = useStore.subscribe(
+        (s) => s.activeTool,
+        (tool) => {
+          engine.setActiveTool(tool);
+          if (tool !== 'measure') clearMeasure(engine);
+          if (tool !== 'crosssection') clearCrossSection(engine);
+        },
+      );
 
-    // ── Forward tool changes to engine ──
-    const unsubTool = useStore.subscribe(
-      (s) => s.activeTool,
-      (tool) => {
-        engine.setActiveTool(tool);
-        if (tool !== 'measure') clearMeasure(engine);
-        if (tool !== 'crosssection') clearCrossSection(engine);
-      },
-    );
+      // ── Forward settings changes to engine ──
+      unsubSettings = useStore.subscribe(
+        (s) => s.settings,
+        (settings) => {
+          engine.updateWaterLevel(settings.waterLevel);
+          engine.updateFogDensity(settings.fogDensity);
+          engine.updateSunElevation(settings.sunElevation);
+          engine.updateExposure(settings.exposure);
+          engine.setVegetationVisible(settings.showVegetation);
+          engine.setShadowsEnabled(settings.showShadows);
+          engine.setSSAOEnabled(settings.enableSSAO);
+          engine.setCameraSpeed(settings.cameraSpeed);
+        },
+      );
 
-    // ── Forward settings changes to engine ──
-    const unsubSettings = useStore.subscribe(
-      (s) => s.settings,
-      (settings) => {
-        engine.updateWaterLevel(settings.waterLevel);
-        engine.updateFogDensity(settings.fogDensity);
-        engine.updateSunElevation(settings.sunElevation);
-        engine.updateExposure(settings.exposure);
-        engine.setVegetationVisible(settings.showVegetation);
-        engine.setShadowsEnabled(settings.showShadows);
-        engine.setSSAOEnabled(settings.enableSSAO);
-        engine.setCameraSpeed(settings.cameraSpeed);
-      },
-    );
+      // ── Sync marker removals from store → 3D scene ──
+      let prevDrillIds    = useStore.getState().drillMarkers.map((m) => m.id);
+      let prevMeasureIds  = useStore.getState().measureMarkers.map((m) => m.id);
+      let prevStrikeDipIds = useStore.getState().strikeDipResults.map((m) => m.id);
 
-    // ── Sync marker removals from store → 3D scene ──
-    let prevDrillIds    = useStore.getState().drillMarkers.map((m) => m.id);
-    let prevMeasureIds  = useStore.getState().measureMarkers.map((m) => m.id);
-    let prevStrikeDipIds = useStore.getState().strikeDipResults.map((m) => m.id);
-
-    const unsubDrill = useStore.subscribe(
-      (s) => s.drillMarkers,
-      (markers) => {
-        const newIds = markers.map((m) => m.id);
-        const removed = prevDrillIds.filter((id) => !newIds.includes(id));
-        removed.forEach((id) => engine.removeMarkerById(id));
-        prevDrillIds = newIds;
-      },
-    );
-    const unsubMeasure = useStore.subscribe(
-      (s) => s.measureMarkers,
-      (markers) => {
-        const newIds = markers.map((m) => m.id);
-        const removed = prevMeasureIds.filter((id) => !newIds.includes(id));
-        removed.forEach((id) => engine.removeMarkerById(id));
-        prevMeasureIds = newIds;
-      },
-    );
-    const unsubStrikeDip = useStore.subscribe(
-      (s) => s.strikeDipResults,
-      (results) => {
-        const newIds = results.map((m) => m.id);
-        const removed = prevStrikeDipIds.filter((id) => !newIds.includes(id));
-        removed.forEach((id) => engine.removeMarkerById(id));
-        prevStrikeDipIds = newIds;
-      },
-    );
+      unsubDrill = useStore.subscribe(
+        (s) => s.drillMarkers,
+        (markers) => {
+          const newIds = markers.map((m) => m.id);
+          const removed = prevDrillIds.filter((id) => !newIds.includes(id));
+          removed.forEach((id) => engine.removeMarkerById(id));
+          prevDrillIds = newIds;
+        },
+      );
+      unsubMeasure = useStore.subscribe(
+        (s) => s.measureMarkers,
+        (markers) => {
+          const newIds = markers.map((m) => m.id);
+          const removed = prevMeasureIds.filter((id) => !newIds.includes(id));
+          removed.forEach((id) => engine.removeMarkerById(id));
+          prevMeasureIds = newIds;
+        },
+      );
+      unsubStrikeDip = useStore.subscribe(
+        (s) => s.strikeDipResults,
+        (results) => {
+          const newIds = results.map((m) => m.id);
+          const removed = prevStrikeDipIds.filter((id) => !newIds.includes(id));
+          removed.forEach((id) => engine.removeMarkerById(id));
+          prevStrikeDipIds = newIds;
+        },
+      );
+    }); // end requestAnimationFrame
 
     return () => {
-      unsubTool();
-      unsubSettings();
-      unsubDrill();
-      unsubMeasure();
-      unsubStrikeDip();
+      disposed = true;
+      cancelAnimationFrame(rafId);
+      unsubTool?.();
+      unsubSettings?.();
+      unsubDrill?.();
+      unsubMeasure?.();
+      unsubStrikeDip?.();
       engine.dispose();
       engineRef.current = null;
     };
-  }, [containerRef]);
+  }, [containerRef, menuOpen]); // re-evaluates when menu is dismissed
 
   return engineRef;
 }

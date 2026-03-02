@@ -95,6 +95,25 @@ const useStore = create(
     closeHelp: () => set({ helpOpen: false }),
     toggleHelp: () => set((s) => ({ helpOpen: !s.helpOpen })),
 
+    // ── Island menu ──────────────────────────────
+    menuOpen: true,
+    selectedIsland: null,
+    enterSim: (island) => set({
+      menuOpen: false,
+      selectedIsland: island,
+      // Reset loading state so the loading screen shows while the engine boots
+      isLoaded: false,
+      loadingProgress: 0,
+      loadingMessage: 'Loading island…',
+    }),
+    returnToMenu: () => set({
+      menuOpen: true,
+      selectedIsland: null,
+      isLoaded: false,
+      loadingProgress: 0,
+      loadingMessage: 'Initializing…',
+    }),
+
     // ── Loading progress ─────────────────────────
     loadingProgress: 0,
     loadingMessage: 'Initializing…',
@@ -105,7 +124,7 @@ const useStore = create(
     // ── Settings ─────────────────────────────────
     settings: {
       waterLevel: 42,
-      fogDensity: 0.00018,
+      fogDensity: 0.00003,
       sunElevation: 55,
       exposure: 1.60,
       showVegetation: true,
@@ -119,7 +138,7 @@ const useStore = create(
       set({
         settings: {
           waterLevel: 42,
-          fogDensity: 0.00018,
+          fogDensity: 0.00003,
           sunElevation: 55,
           exposure: 1.60,
           showVegetation: true,

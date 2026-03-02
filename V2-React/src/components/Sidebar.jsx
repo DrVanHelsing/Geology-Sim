@@ -2,7 +2,7 @@ import useStore from '../store/useStore';
 import {
   NavigateIcon, IdentifyIcon, DrillIcon, MeasureIcon,
   StrikeDipIcon, CrossSectionIcon,
-  LayersIcon, NotebookIcon, HelpIcon, SettingsIcon,
+  LayersIcon, NotebookIcon, HelpIcon, SettingsIcon, ExitIcon,
 } from './icons/Icons';
 
 const TOOLS = [
@@ -26,6 +26,7 @@ export default function Sidebar() {
   const togglePanel = useStore((s) => s.togglePanel);
   const helpOpen    = useStore((s) => s.helpOpen);
   const toggleHelp  = useStore((s) => s.toggleHelp);
+  const returnToMenu = useStore((s) => s.returnToMenu);
 
   return (
     <nav id="sidebar">
@@ -76,6 +77,19 @@ export default function Sidebar() {
           onClick={() => togglePanel('settings')}
         >
           <SettingsIcon />
+        </button>
+      </div>
+
+      <div className="sb-divider" />
+
+      {/* Exit to menu */}
+      <div className="sb-section">
+        <button
+          className="sb-btn sb-btn--exit"
+          data-tooltip="Back to Menu"
+          onClick={() => returnToMenu()}
+        >
+          <ExitIcon />
         </button>
       </div>
     </nav>

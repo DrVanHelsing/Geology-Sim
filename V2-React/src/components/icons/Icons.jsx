@@ -165,6 +165,16 @@ export function PlusIcon() {
   return <svg {...S} viewBox="0 0 16 16" style={{ width: 12, height: 12 }}><path d="M8 3v10M3 8h10" /></svg>;
 }
 
+export function ExitIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
+  );
+}
+
 export function TrashIcon() {
   return <svg {...S} viewBox="0 0 16 16" style={{ width: 12, height: 12 }}><path d="M3 4h10M5.5 4V3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1M6 7v5M10 7v5M4 4l.8 9a1 1 0 0 0 1 .9h4.4a1 1 0 0 0 1-.9L12 4" /></svg>;
 }

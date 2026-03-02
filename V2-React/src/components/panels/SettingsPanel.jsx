@@ -4,11 +4,11 @@ import { SettingsIcon } from '../icons/Icons';
 
 /* ── Time-of-day presets ──────────────────────── */
 const TIME_PRESETS = [
-  { label: 'Dawn',      icon: '🌅', sun: 12, fog: 0.00026, exposure: 1.15 },
-  { label: 'Morning',   icon: '☀️', sun: 35, fog: 0.00020, exposure: 1.40 },
-  { label: 'Noon',      icon: '🔆', sun: 55, fog: 0.00018, exposure: 1.60 },
-  { label: 'Afternoon', icon: '⛅', sun: 42, fog: 0.00020, exposure: 1.45 },
-  { label: 'Dusk',      icon: '🌇', sun: 10, fog: 0.00030, exposure: 1.05 },
+  { label: 'Dawn',      icon: '🌅', sun: 12, fog: 0.00005, exposure: 1.15 },
+  { label: 'Morning',   icon: '☀️', sun: 35, fog: 0.00004, exposure: 1.40 },
+  { label: 'Noon',      icon: '🔆', sun: 55, fog: 0.00003, exposure: 1.60 },
+  { label: 'Afternoon', icon: '⛅', sun: 42, fog: 0.00004, exposure: 1.45 },
+  { label: 'Dusk',      icon: '🌇', sun: 10, fog: 0.00006, exposure: 1.05 },
 ];
 
 /* ── Range slider with live value ─────────────── */
@@ -78,7 +78,7 @@ export default function SettingsPanel() {
   const handleReset = useCallback(() => {
     const defaults = {
       waterLevel: 42,
-      fogDensity: 0.00018,
+      fogDensity: 0.00003,
       sunElevation: 55,
       exposure: 1.60,
       showVegetation: true,
@@ -132,7 +132,7 @@ export default function SettingsPanel() {
       <RangeField
         label="Fog Density"
         value={local.fogDensity}
-        min={0} max={0.002} step={0.00002}
+        min={0} max={0.0006} step={0.00001}
         format={(v) => v.toFixed(5)}
         onChange={(v) => set('fogDensity', v)}
       />

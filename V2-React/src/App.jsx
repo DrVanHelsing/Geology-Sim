@@ -13,6 +13,7 @@ import HUD from './components/HUD';
 import LoadingScreen from './components/LoadingScreen';
 import RockPopup from './components/RockPopup';
 import MobileControls from './components/MobileControls';
+import MenuScreen from './components/MenuScreen';
 
 export default function App() {
   const containerRef = useRef(null);
@@ -23,6 +24,7 @@ export default function App() {
   return (
     <SceneProvider engineRef={engineRef}>
       <Viewport ref={containerRef} />
+      <MenuScreen />
       <LoadingScreen />
       <Sidebar />
       <Panel />
